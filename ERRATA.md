@@ -4,7 +4,7 @@ This file has information about known issues in the latest released **WINCS02** 
 
 ## Latest Firmware
 
-The latest released **WINCS02** and **RNWF02** firmware is [v3.2.0].
+The latest released **WINCS02** and **RNWF02** firmware is v3.2.0.
 
 ## Errata
 

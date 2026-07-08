@@ -9,7 +9,7 @@ Firmware binaries and release notes are available on the [Releases page](../../r
 
 | Version | Download |
 |---------|----------|
-| **v3.2.0** (latest) | [GitHub Release](../../releases/tag/RNWF02_v3.2.0) |
+| **v3.2.0** (latest) | [GitHub Release](../../releases/download/v3.2.0/RNWF02_Module_Release_3.2.0_a1ac4a49.zip) |
 
 ### Firmware Files
 

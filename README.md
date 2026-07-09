@@ -44,27 +44,18 @@ Firmware can be programmed or updated on non-running **WINCS02** and **RNWF02** 
 - via the [DFU tool](./tools/dfu/); or
 - via a host application that implements the DFU process described in the application developer guide.
 
-<<<<<<< HEAD
-Firmware can be updated on running **WINCS02** and **RNWF02** devices:
-- via the [NVM Update tool](./tools/nvm_update/); or
-=======
 Firmware can be updated on running **RNWF02** devices:
 - via the [NVM Update tool](./tools/nvm_update/); or
 - via a host application that implements OTA as described in the API specification.
 
 Firmware can be updated on running **WINCS02** devices:
->>>>>>> main
 - via a host application that implements OTA as described in the API specification.
 
 ## Quick Links
 
 | WINCS02 | RNWF02 |
 |---|---|
-<<<<<<< HEAD
-| [Latest Firmware Release Package](https://github.com/MicrochipTech/WINCS02-RNWF02-Releases/releases/download/v3.2.0/WINCS02_Module_Release_3.2.0_a1ac4a49.zip) | [Latest Firmware Release Package](https://github.com/MicrochipTech/WINCS02-RNWF02-Releases/releases/download/v3.2.0/RNWF02_Module_Release_3.2.0_a1ac4a49.zip) |
-=======
 | [Latest Firmware Release Package](../../releases/download/v3.2.0/WINCS02_Module_Release_3.2.0_a1ac4a49.zip) | [Latest Firmware Release Package](../../releases/download/v3.2.0/RNWF02_Module_Release_3.2.0_a1ac4a49.zip) |
->>>>>>> main
 | [Host Driver](./WINCS02/driver/) | N/A |
 | API Specification (Binary Protocol): [PDF](./WINCS02/doc/WINCS02_API_Reference.pdf), [Markdown](./WINCS02/doc/WINCS02_API_Reference.md) | API Specification (AT Command): [PDF](./RNWF02/doc/RNWF02_AT_Command_Reference.pdf), [Markdown](./RNWF02/doc/RNWF02_AT_Command_Reference.md) |
 | [Application Developer Guide](https://onlinedocs.microchip.com/g/GUID-B7A95EBE-7BB2-4AF4-A525-700FB718E47A) | [Application Developer Guide](https://onlinedocs.microchip.com/g/GUID-92FEB3A1-C10F-47DF-BF88-C06521800526) |

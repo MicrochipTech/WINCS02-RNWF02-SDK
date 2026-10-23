@@ -9,7 +9,8 @@ Firmware binaries and release notes are available on the [Releases page](../../r
 
 | Version | Download |
 |---------|----------|
-| **v3.2.0** (latest) | [GitHub Release](../../releases/download/v3.2.0/WINCS02_Module_Release_3.2.0_a1ac4a49.zip) |
+| **v3.3.0** (latest) | [GitHub Release](../../releases/download/v3.3.0/WINCS02_Module_Release_3.3.0_a59011f4.zip) |
+| v3.2.0 | [GitHub Release](../../releases/download/v3.2.0/WINCS02_Module_Release_3.2.0_a1ac4a49.zip) |
 
 ### Firmware Files
 

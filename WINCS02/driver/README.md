@@ -146,7 +146,10 @@ the USB position.
 
 For bare-metal (no RTOS), the provided `port/conf_winc_dev.h` works
 out of the box. The lock macros are left undefined, which activates the
-driver's built-in no-op defaults (`winc_dev.h` lines 44-58).
+driver's built-in no-op defaults in `winc_dev.h`.
+
+For an RTOS, define the `WINC_CONF_LOCK_*` macros in `conf_winc_dev.h` — see the
+FreeRTOS example in that file.
 
 ## MPLAB Harmony Users
 
@@ -157,6 +160,18 @@ If you are using MPLAB Harmony, use the integrated driver and services:
 
 > **Note:** The WINCS02 driver lives in `wireless_wifi`; the
 > `wireless_system_rnwf` services layer is optional.
+
+## Driver Version
+
+The driver version is defined in `src/include/winc_dev.h`
+(`WINC_DEV_DRIVER_VERSION_*`) and matches the firmware release it was
+generated from (currently v3.3.0). Use the driver with the matching firmware
+version.
+
+The higher-level MQTT, TLS context, firmware update and mDNS helper modules
+are only provided with the MPLAB Harmony and Zephyr drivers. With this driver,
+MQTT, TLS and firmware update are available through the command API
+(`WINC_Cmd*` functions in `winc_cmds.h`).
 
 ## API Specification
 

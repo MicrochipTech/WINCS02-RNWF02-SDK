@@ -37,6 +37,11 @@ typedef struct {
 #define SPI_SDIO_BLOCK_SZ       512U
 #define SPI_SDIO_RETRY_CNT      100
 
+/* Number of polls for DATA_RDY before a CMD53 read is failed. */
+#ifndef SPI_SDIO_DATA_RDY_RETRY_CNT
+#define SPI_SDIO_DATA_RDY_RETRY_CNT     10000
+#endif
+
 static const uint8_t crc7[256] = {
     0x00, 0x12, 0x24, 0x36, 0x48, 0x5a, 0x6c, 0x7e, 0x90, 0x82, 0xb4, 0xa6, 0xd8, 0xca, 0xfc, 0xee,
     0x32, 0x20, 0x16, 0x04, 0x7a, 0x68, 0x5e, 0x4c, 0xa2, 0xb0, 0x86, 0x94, 0xea, 0xf8, 0xce, 0xdc,
@@ -619,6 +624,7 @@ uint16_t WINC_SDIOCmd53Read(uint32_t fnRegAddr, uint8_t *pReadPtr, size_t readLe
     uint8_t regValue;
     uint8_t cmd52Status;
     int retry;
+    int dataRdyRetry = SPI_SDIO_DATA_RDY_RETRY_CNT;
 
     WINC_VERBOSE_PRINT("C53R[%08x %d]\n", fnRegAddr, readLength);
 
@@ -637,8 +643,16 @@ uint16_t WINC_SDIOCmd53Read(uint32_t fnRegAddr, uint8_t *pReadPtr, size_t readLe
             }
 
             if (0 == (regValue & WINC_SDIO_REG_FN1_INT_DATA_RDY)) {
+                /* Limit the wait for the device to have data ready. */
+                if (0 == --dataRdyRetry) {
+                    WINC_ERROR_PRINT("error, CMD53 read timed out waiting for DATA_RDY\n");
+                    return ((uint16_t)WINC_SDIO_R1RSP_FAILED) << 8;
+                }
+
                 continue;
             }
+
+            dataRdyRetry = SPI_SDIO_DATA_RDY_RETRY_CNT;
 
             regValue = WINC_SDIO_REG_FN1_INT_DATA_RDY;
 

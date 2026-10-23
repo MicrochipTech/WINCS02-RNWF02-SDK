@@ -23,9 +23,10 @@ This SDK provides firmware, host driver, tools, and documentation for developing
 **WINCS02** and **RNWF02** provide the following features:
 
 - **Wi-Fi:** 802.11 b/g/n, station and soft-AP modes, WPA2/WPA3 Personal & Enterprise, simple roaming
+- **Scanning and Beaconing:** Active, passive and periodic scanning with SSID filtering; beacon transmission; vendor-specific information elements
 - **TCP/IP Stack:** IPv4/IPv6, TCP, UDP, DHCP client/server, DNS client
 - **TLS:** TLS 1.2 client/server
-- **MQTT:** MQTT v3.1.1 / v5.0 client with TLS support
+- **MQTT:** MQTT v3.1.1 / v5.0 client with TLS support and large message (up to 16KB) handling
 - **HTTP/S:** HTTP client for REST APIs and cloud connectivity
 - **SNTP:** Network time synchronization
 - **Low Power:** Wi-Fi and system level power-save modes
@@ -55,7 +56,7 @@ Firmware can be updated on running **WINCS02** devices:
 
 | WINCS02 | RNWF02 |
 |---|---|
-| [Latest Firmware Release Package](../../releases/download/v3.2.0/WINCS02_Module_Release_3.2.0_a1ac4a49.zip) | [Latest Firmware Release Package](../../releases/download/v3.2.0/RNWF02_Module_Release_3.2.0_a1ac4a49.zip) |
+| [Latest Firmware Release Package](../../releases/download/v3.3.0/WINCS02_Module_Release_3.3.0_a59011f4.zip) | [Latest Firmware Release Package](../../releases/download/v3.3.0/RNWF02_Module_Release_3.3.0_a59011f4.zip) |
 | [Host Driver](./WINCS02/driver/) | N/A |
 | API Specification (Binary Protocol): [PDF](./WINCS02/doc/WINCS02_API_Reference.pdf), [Markdown](./WINCS02/doc/WINCS02_API_Reference.md) | API Specification (AT Command): [PDF](./RNWF02/doc/RNWF02_AT_Command_Reference.pdf), [Markdown](./RNWF02/doc/RNWF02_AT_Command_Reference.md) |
 | [Application Developer Guide](https://onlinedocs.microchip.com/g/GUID-B7A95EBE-7BB2-4AF4-A525-700FB718E47A) | [Application Developer Guide](https://onlinedocs.microchip.com/g/GUID-92FEB3A1-C10F-47DF-BF88-C06521800526) |

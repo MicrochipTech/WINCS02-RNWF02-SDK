@@ -32,7 +32,7 @@ TO MICROCHIP FOR THIS SOFTWARE.
 
 /* Driver version number. */
 #define WINC_DEV_DRIVER_VERSION_MAJOR_NO    3
-#define WINC_DEV_DRIVER_VERSION_MINOR_NO    2
+#define WINC_DEV_DRIVER_VERSION_MINOR_NO    3
 #define WINC_DEV_DRIVER_VERSION_PATCH_NO    0
 
 /* Definition of WINC device handle type. */
@@ -86,6 +86,66 @@ typedef enum {
     WINC_DEV_BUS_STATE_IDLE,
     WINC_DEV_BUS_STATE_ACTIVE,
 } WINC_DEV_BUS_STATE_TYPE;
+
+/*****************************************************************************
+  Description:
+    Device error types for extended error reporting.
+
+  Remarks:
+    Use WINC_DevGetLastError to retrieve the error code after a function
+    returns false. When WINC_DEV_EXTENDED_ERROR_INFO is defined,
+    WINC_DevGetLastErrorEx provides additional details.
+
+ *****************************************************************************/
+
+typedef enum {
+    WINC_DEV_ERROR_NONE = 0,
+
+    /* Invalid parameters / preconditions */
+    WINC_DEV_ERROR_INVALID_HANDLE,
+    WINC_DEV_ERROR_NOT_INITIALIZED,
+    WINC_DEV_ERROR_INVALID_PARAM,
+
+    /* State errors (driver internal) */
+    WINC_DEV_ERROR_BUS_ALREADY_ERROR,
+    WINC_DEV_ERROR_EVENT_PENDING,
+    WINC_DEV_ERROR_NULL_EVENT_HEADER,
+    WINC_DEV_ERROR_ZERO_LENGTH_EVENT,
+    WINC_DEV_ERROR_UNKNOWN_EVENT_TYPE,
+
+    /* Resource errors */
+    WINC_DEV_ERROR_MUTEX_FAILED,
+
+    /* Physical SPI errors */
+    WINC_DEV_ERROR_SPI_CMD52_FAILED,
+    WINC_DEV_ERROR_SPI_CMD53_READ_FAILED,
+    WINC_DEV_ERROR_SPI_CMD53_WRITE_FAILED,
+
+    /* Buffer errors */
+    WINC_DEV_ERROR_BUFFER_OVERFLOW,
+
+    /* Device errors */
+    WINC_DEV_ERROR_INT_STUCK,
+
+} WINC_DEV_ERROR_TYPE;
+
+#ifdef WINC_DEV_EXTENDED_ERROR_INFO
+/*****************************************************************************
+  Description:
+    Extended error information structure.
+
+  Remarks:
+    Only available when WINC_DEV_EXTENDED_ERROR_INFO is defined.
+
+ *****************************************************************************/
+
+typedef struct {
+    WINC_DEV_ERROR_TYPE code;
+    uint16_t            spiStatus;
+    const char*         file;
+    uint16_t            line;
+} WINC_DEV_EXTENDED_ERROR;
+#endif
 
 /*****************************************************************************
   Description:
@@ -187,9 +247,11 @@ typedef bool (*WINC_DEV_EVENT_CHECK_FP)(void);
 
 WINC_DEVICE_HANDLE WINC_DevInit(const WINC_DEV_INIT *pInitData);
 void WINC_DevDeinit(WINC_DEVICE_HANDLE devHandle);
+bool WINC_DevReset(WINC_DEVICE_HANDLE devHandle);
 void WINC_DevSetDebugPrintf(WINC_DEBUG_PRINTF_FP pfPrintf);
 bool WINC_DevTransmitCmdReq(WINC_DEVICE_HANDLE devHandle, WINC_CMD_REQ_HANDLE cmdReqHandle);
 bool WINC_DevUpdateEvent(WINC_DEVICE_HANDLE devHandle);
+bool WINC_DevEventPending(WINC_DEVICE_HANDLE devHandle);
 bool WINC_DevHandleEvent(WINC_DEVICE_HANDLE devHandle, WINC_DEV_EVENT_CHECK_FP pfEventIntCheck);
 bool WINC_DevAECCallbackRegister(WINC_DEVICE_HANDLE devHandle, WINC_DEV_AEC_RSP_CB pfAecRspCallback, uintptr_t aecRspCallbackCtx);
 bool WINC_DevAECCallbackDeregister(WINC_DEVICE_HANDLE devHandle, WINC_DEV_AEC_RSP_CB pfAecRspCallback);
@@ -197,5 +259,10 @@ bool WINC_DevUnpackElements(uint8_t numTlvs, const uint8_t *pTLVBytes, WINC_DEV_
 bool WINC_DevInterceptCallbackRegister(WINC_DEVICE_HANDLE devHandle, WINC_DEV_RX_INTERCEPT_CB pfInterceptCallback, uintptr_t interceptCallbackCtx);
 WINC_DEV_BUS_STATE_TYPE WINC_DevBusStateGet(WINC_DEVICE_HANDLE devHandle);
 bool WINC_DevBusStateSet(WINC_DEVICE_HANDLE devHandle, WINC_DEV_BUS_STATE_TYPE busState);
+WINC_DEV_ERROR_TYPE WINC_DevGetLastError(WINC_DEVICE_HANDLE devHandle);
+const char* WINC_DevErrorToString(WINC_DEV_ERROR_TYPE error);
+#ifdef WINC_DEV_EXTENDED_ERROR_INFO
+bool WINC_DevGetLastErrorEx(WINC_DEVICE_HANDLE devHandle, WINC_DEV_EXTENDED_ERROR *pError);
+#endif
 
 #endif /* WINC_DEV_H */

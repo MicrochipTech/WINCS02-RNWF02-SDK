@@ -18,8 +18,8 @@ This reference manual provides information on the commands and features for Micr
 </tr>
 <tr>
 <td>RNWF02</td>
-<td>3.2.0</td>
-<td>a1ac4a492</td>
+<td>3.3.0</td>
+<td>a59011f4b</td>
 </tr>
 </tbody>
 </table>
@@ -32,7 +32,7 @@ In this document, the following naming conventions are used:
 
 - DTE (Data Terminal Equipment): the terminal that issues commands to the Wi-Fi module.
 
-The DCE interfaces operates in one of two modes:
+The DCE interface operates in one of two modes:
 
 - Terminal mode: the DCE waits for AT commands and interprets all received characters as commands to execute. All commands must be terminated with a literal \<CR\>\<LF\> and these characters must not appear anywhere else in the command/parameter input stream. Parameters may be exchanged in one of two forms to accommodate binary data or infrequently-used ASCII control characters.
 
@@ -44,7 +44,7 @@ In most cases any output from the DCE will be in response to the receipt of a co
 
     <CR>+AECNAME:INFO<CR><LF>
 
-To avoid confusion at the DTE, AECs will not be sent during the execution of a command. However the DTE must be prepared to receive AECs at any time as it is possible for the DCE to send ACEs resulting from a previous command or condition while the DTE is transmitting a new command.
+To avoid confusion at the DTE, AECs will not be sent during the execution of a command. However the DTE must be prepared to receive AECs at any time as it is possible for the DCE to send AECs resulting from a previous command or condition while the DTE is transmitting a new command.
 
 ### Commands and Responses
 
@@ -111,7 +111,7 @@ If an error occurs during asynchronous processing of a command the response will
 
     <CR>+CMDNAME:ERRORRSP<CR><LF>
 
-Where CNDNAME is the name of the command issued and encountering the error and ERRORRSP is an error response formatted as detailed in the table above. For example:
+Where CMDNAME is the name of the command issued and encountering the error and ERRORRSP is an error response formatted as detailed in the table above. For example:
 
     <CR>+SOCKBR:ERROR:4<CR><LF>
 
@@ -121,7 +121,7 @@ To simplify command/response interactions with automated systems where it may be
 
 Each command, response and AEC has a two part ID: a module ID and a command/AEC ID. These two numbers are combined in the form:
 
-    MM:NN
+    MM.NN
 
 Where MM is the hexadecimal representation of the module ID and NN is the hexadecimal representation of the command/AEC ID.
 
@@ -299,11 +299,12 @@ Raw binary can be useful for transferring data that is either transmitted or rec
 > [!NOTE]
 > The 'escape sequence' method for returning to terminal mode relies not only on receipt of the '+++' sequence, but also the absence of any further input for a period of time. By default this is 1 second.
 
+<a id="AN_OVERVIEW_RAW_BINARY_DCE_DTE"></a>
 #### Raw Binary - From DCE to DTE
 
 For retrieval of data in binary mode the DTE must either specify the number of bytes it wishes to receive or specify zero to request a persistent exit from terminal mode. On leaving terminal mode, the DCE will output a single '#' character, it will then transmit data in raw binary format.
 
-The DCE will return to terminal mode if either of the following occurs:
+The DCE will return to terminal mode if any of the following occurs:
 
 1.  The +++ escape sequence is received from the DTE
 
@@ -313,6 +314,7 @@ The DCE will return to terminal mode if either of the following occurs:
 
 On returning to terminal mode, the DCE will return the result of the command which initiated the transfer.
 
+<a id="AN_OVERVIEW_RAW_BINARY_DTE_DCE"></a>
 #### Raw Binary - From DTE to DCE
 
 For transmission of data in binary mode the DTE must either specify the number of bytes it wishes to send to the DCE or specify zero to request a persistent exit from terminal mode. On leaving terminal mode, the DCE will accept binary format data until such time as:
@@ -321,7 +323,7 @@ For transmission of data in binary mode the DTE must either specify the number o
 
 2.  The number of bytes requested by the DTE has been sent
 
-When operating in non-terminal mode, the DCE will periodically flush (i.e. transmit) the accumulated data. Generally, this means writing the data to an associated socket. The time period for the automatic flush of data is configurable (please see the XXX command).
+While in raw binary mode, the DCE forwards the received data to its destination (generally an associated socket) as it is received. When a length was specified, the data is sent once that number of bytes has been received.
 
 ---
 ### Command Input
@@ -342,9 +344,9 @@ Basic commands are single alphabetic characters which may be preceded by a singl
 
 #### Extended Commands:
 
-Extended commands begin with a single '+' character followed by a command name. If the command requires parameters, the command name is followed by a single '=' character with each parameter separated from the next by a comma. Parameters must follow the formatting rules for Integers, String or Labels.
+Extended commands begin with a single '+' character followed by a command name. If the command requires parameters, the command name is followed by a single '=' character with each parameter separated from the next by a comma. Parameters must follow the formatting rules for Integers or Strings.
 
-Examples:
+**Examples:**
 
 <table>
 <tbody>
@@ -589,6 +591,7 @@ Range of IDs
 </tbody>
 </table>
 
+---
 #### Query Response Elements:
 
 Standard configuration parameter queries return a simple \<ID\>,\<VALUE\> pair. For single value parameters the \<ID\> will be an integer, for multiple value parameters the \<ID\> will be a fractional integer in the form \<ID\>.0, \<ID\>.1 etc for each value.
@@ -645,6 +648,8 @@ Complex ID/Value
 </tbody>
 </table>
 
+---
+<a id="_default_configurations_and_presets"></a>
 #### Default Configurations and Presets:
 
 Configuration commands are initially loaded with default values, also known as **preset 0**. Many configuration commands also support reloading preset values.
@@ -812,12 +817,12 @@ For example, the descriptor `GSRG` means:
 | 0,3 | UNKNOWN_CMD | Unknown AT Command |
 | 0,4 | INVALID_PARAMETER | Invalid Parameter |
 | 0,5 | INCORRECT_NUM_PARAMS | Incorrect Number of Parameters |
-| 0,6 | STORE_UPDATE_BLOCKED | Configuration Update Blocked |
+| 0,6 | <span id="AN_STATUS_STORE_UPDATE_BLOCKED"></span> STORE_UPDATE_BLOCKED | Configuration Update Blocked |
 | 0,7 | STORE_ACCESS_FAILED | Configuration Access Failed |
-| 0,8 | TIMEOUT | Command Timed Out |
+| 0,8 | <span id="AN_STATUS_TIMEOUT"></span> TIMEOUT | Command Timed Out |
 | 0,9 | HOST_INTERFACE_FAILED | Host Interface Failed |
 | 0,10 | ACCESS_DENIED | Access Denied |
-| 0,11 | CONFIG_CONFLICT | Configuration Conflict |
+| 0,11 | <span id="AN_STATUS_CONFIG_CONFLICT"></span> CONFIG_CONFLICT | Configuration Conflict |
 
 CORE Status Codes (Module ID = 0)
 
@@ -836,7 +841,7 @@ CORE Status Codes (Module ID = 0)
 
 | Value | Name | Description |
 |----|----|----|
-| 3,0 | CFG_NOT_PRESENT | Configuration not present |
+| 3,0 | <span id="AN_STATUS_CFG_NOT_PRESENT"></span> CFG_NOT_PRESENT | Configuration not present |
 
 [CFG](#AN_MOD_CFG) Status Codes (Module ID = 3)
 
@@ -887,18 +892,18 @@ CORE Status Codes (Module ID = 0)
 
 | Value | Name | Description |
 |----|----|----|
-| 10,0 | ERASE_DONE | Erase Done |
-| 10,1 | WRITE_DONE | Write Done |
-| 10,2 | VERIFY_DONE | Verify Done |
-| 10,3 | ACTIVATE_DONE | Activate Done |
-| 10,4 | INVALIDATE_DONE | Invalidate Done |
-| 10,5 | OTA_ERROR | OTA Error |
-| 10,6 | OTA_NO_STA_CONN | No STA Connection |
-| 10,7 | OTA_PROTOCOL_ERROR | Protocol Error |
-| 10,8 | OTA_TLS_ERROR | TLS Error |
-| 10,9 | OTA_IMG_TOO_LARGE | Image Exceeds |
-| 10,10 | OTA_TIMEOUT | Timeout |
-| 10,11 | OTA_VERIFY_FAILED | Image Verify Failed |
+| 10,0 | <span id="AN_STATUS_ERASE_DONE"></span> ERASE_DONE | Erase Done |
+| 10,1 | <span id="AN_STATUS_WRITE_DONE"></span> WRITE_DONE | Write Done |
+| 10,2 | <span id="AN_STATUS_VERIFY_DONE"></span> VERIFY_DONE | Verify Done |
+| 10,3 | <span id="AN_STATUS_ACTIVATE_DONE"></span> ACTIVATE_DONE | Activate Done |
+| 10,4 | <span id="AN_STATUS_INVALIDATE_DONE"></span> INVALIDATE_DONE | Invalidate Done |
+| 10,5 | <span id="AN_STATUS_OTA_ERROR"></span> OTA_ERROR | OTA Error |
+| 10,6 | <span id="AN_STATUS_OTA_NO_STA_CONN"></span> OTA_NO_STA_CONN | No STA Connection |
+| 10,7 | <span id="AN_STATUS_OTA_PROTOCOL_ERROR"></span> OTA_PROTOCOL_ERROR | Protocol Error |
+| 10,8 | <span id="AN_STATUS_OTA_TLS_ERROR"></span> OTA_TLS_ERROR | TLS Error |
+| 10,9 | <span id="AN_STATUS_OTA_IMG_TOO_LARGE"></span> OTA_IMG_TOO_LARGE | Image Too Large |
+| 10,10 | <span id="AN_STATUS_OTA_TIMEOUT"></span> OTA_TIMEOUT | Timeout |
+| 10,11 | <span id="AN_STATUS_OTA_VERIFY_FAILED"></span> OTA_VERIFY_FAILED | Image Verify Failed |
 
 [OTA](#AN_MOD_OTA) Status Codes (Module ID = 10)
 
@@ -925,18 +930,18 @@ CORE Status Codes (Module ID = 0)
 |----|----|----|
 | 14,0 | SOCKET_ID_NOT_FOUND | Socket ID Not Found |
 | 14,1 | LENGTH_MISMATCH | Length Mismatch |
-| 14,2 | NO_FREE_SOCKETS | No Free Sockets |
+| 14,2 | <span id="AN_STATUS_NO_FREE_SOCKETS"></span> NO_FREE_SOCKETS | No Free Sockets |
 | 14,3 | SOCKET_INVALID_PROTOCOL | Invalid Socket Protocol |
 | 14,4 | SOCKET_CLOSE_FAILED | Socket Close Failed |
 | 14,5 | SOCKET_BIND_FAILED | Socket Bind Failed |
-| 14,6 | SOCKET_TLS_FAILED | Socket TLS Failed |
+| 14,6 | <span id="AN_STATUS_SOCKET_TLS_FAILED"></span> SOCKET_TLS_FAILED | Socket TLS Failed |
 | 14,7 | SOCKET_CONNECT_FAILED | Socket Connect Failed |
 | 14,8 | SOCKET_SEND_FAILED | Socket Send Failed |
 | 14,9 | SOCKET_SET_OPT_FAILED | Socket Set Option Failed |
 | 14,10 | SOCKET_REMOTE_NOT_SET | Socket Destination Not Set |
 | 14,11 | MULTICAST_ERROR | Multicast Error |
-| 14,12 | SOCKET_NOT_READY | Socket Not Ready |
-| 14,13 | SOCKET_SEQUENCE_ERROR | Socket Sequence Error |
+| 14,12 | <span id="AN_STATUS_SOCKET_NOT_READY"></span> SOCKET_NOT_READY | Socket Not Ready |
+| 14,13 | <span id="AN_STATUS_SOCKET_SEQUENCE_ERROR"></span> SOCKET_SEQUENCE_ERROR | Socket Sequence Error |
 
 [SOCKET](#AN_MOD_SOCKET) Status Codes (Module ID = 14)
 
@@ -952,11 +957,11 @@ CORE Status Codes (Module ID = 0)
 
 | Value | Name | Description |
 |----|----|----|
-| 17,0 | TLS_CA_CERT_MISSING | CA Cert Missing |
-| 17,1 | TLS_CA_CERT_VALIDATION | CA Cert Validation |
-| 17,2 | TLS_CA_CERT_DATE_VALIDATION | CA Cert Date Validation |
-| 17,3 | TLS_KEY_PAIR_INCOMPLETE | Key Pair Incomplete |
-| 17,4 | TLS_PEER_DOMAIN_MISSING | Peer Domain Missing |
+| 17,0 | <span id="AN_STATUS_TLS_CA_CERT_MISSING"></span> TLS_CA_CERT_MISSING | CA Cert Missing |
+| 17,1 | <span id="AN_STATUS_TLS_CA_CERT_VALIDATION"></span> TLS_CA_CERT_VALIDATION | CA Cert Validation |
+| 17,2 | <span id="AN_STATUS_TLS_CA_CERT_DATE_VALIDATION"></span> TLS_CA_CERT_DATE_VALIDATION | CA Cert Date Validation |
+| 17,3 | <span id="AN_STATUS_TLS_KEY_PAIR_INCOMPLETE"></span> TLS_KEY_PAIR_INCOMPLETE | Key Pair Incomplete |
+| 17,4 | <span id="AN_STATUS_TLS_PEER_DOMAIN_MISSING"></span> TLS_PEER_DOMAIN_MISSING | Peer Domain Missing |
 
 [TLS](#AN_MOD_TLS) Status Codes (Module ID = 17)
 
@@ -968,9 +973,22 @@ CORE Status Codes (Module ID = 0)
 | 18,1 | WAP_STOP_FAILED | Soft AP Stop Failed |
 | 18,2 | WAP_START_REFUSED | Soft AP Start Not Permitted |
 | 18,3 | WAP_START_FAILED | Soft AP Start Failed |
-| 18,4 | UNSUPPORTTED_SEC_TYPE | Unsupported Security Type |
+| 18,4 | UNSUPPORTED_SEC_TYPE | Unsupported Security Type |
 
 [WAP](#AN_MOD_WAP) Status Codes (Module ID = 18)
+
+ 
+
+| Value | Name | Description |
+|----|----|----|
+| 19,0 | WSCN_SCAN_IN_PROGRESS | Scan In Progress |
+| 19,1 | WSCN_PERIODIC_SCAN_IS_RUNNING | Periodic Scan is Running |
+| 19,2 | WSCN_INTERVAL_TOO_SHORT | Scan Interval Too Short |
+| 19,3 | WSCN_AP_MODE_ACTIVE | Soft AP Active |
+| 19,4 | WSCN_NO_CHANNELS | No Channels To Scan |
+| 19,5 | WSCN_STA_TRANSITIONING | STA transition In Progress |
+
+[WSCN](#AN_MOD_WSCN) Status Codes (Module ID = 19)
 
  
 
@@ -979,7 +997,7 @@ CORE Status Codes (Module ID = 0)
 | 20,0 | STA_DISCONN_REFUSED | STA Disconnect Not Permitted |
 | 20,1 | STA_DISCONN_FAILED | STA Disconnect Failed |
 | 20,2 | STA_CONN_REFUSED | STA Connection Not Permitted |
-| 20,3 | STA_CONN_FAILED | STA Connection Failed |
+| 20,3 | <span id="AN_STATUS_STA_CONN_FAILED"></span> STA_CONN_FAILED | STA Connection Failed |
 
 [WSTA](#AN_MOD_WSTA) Status Codes (Module ID = 20)
 
@@ -995,7 +1013,7 @@ CORE Status Codes (Module ID = 0)
 
 | Value | Name | Description |
 |----|----|----|
-| 29,0 | NVM_LOCKED | NVM Locked Until Reset |
+| 29,0 | <span id="AN_STATUS_NVM_LOCKED"></span> NVM_LOCKED | NVM Locked Until Reset |
 
 [NVM](#AN_MOD_NVM) Status Codes (Module ID = 29)
 
@@ -1011,9 +1029,9 @@ CORE Status Codes (Module ID = 0)
 
 | Value | Name | Description |
 |----|----|----|
-| 31,0 | PPS_WIFI_PS_NOT_ENABLED | Wi-Fi PS Not Enabled |
-| 31,1 | PPS_TIMEOUT | PPS Timeout |
-| 31,2 | PPS_PAUSE_EXPIRED | PPS Pause Expired |
+| 31,0 | <span id="AN_STATUS_PPS_WIFI_PS_NOT_ENABLED"></span> PPS_WIFI_PS_NOT_ENABLED | Wi-Fi PS Not Enabled |
+| 31,1 | <span id="AN_STATUS_PPS_TIMEOUT"></span> PPS_TIMEOUT | PPS Timeout |
+| 31,2 | <span id="AN_STATUS_PPS_PAUSE_EXPIRED"></span> PPS_PAUSE_EXPIRED | PPS Pause Expired |
 
 [PPS](#AN_MOD_PPS) Status Codes (Module ID = 31)
 
@@ -1031,7 +1049,7 @@ CORE Status Codes (Module ID = 0)
 | Value | Name | Description |
 |----|----|----|
 | 34,0 | HTTP_DNS_FAILED | HTTP DNS failed |
-| 34,1 | HTTP_TLS_FAILED | HTTP TLS failed |
+| 34,1 | <span id="AN_STATUS_HTTP_TLS_FAILED"></span> HTTP_TLS_FAILED | HTTP TLS failed |
 | 34,2 | HTTP_CONNECT_FAILED | HTTP connect failed |
 | 34,3 | HTTP_MEMORY | HTTP buffer allocation |
 | 34,4 | HTTP_RESPONSE_HEADERS | HTTP response format |
@@ -1040,6 +1058,19 @@ CORE Status Codes (Module ID = 0)
 | 34,7 | HTTP_TIMEOUT | HTTP timeout |
 
 [HTTP](#AN_MOD_HTTP) Status Codes (Module ID = 34)
+
+ 
+
+| Value | Name | Description |
+|----|----|----|
+| 35,0 | <span id="AN_STATUS_WBCN_IN_PROGRESS"></span> WBCN_IN_PROGRESS | Beaconing In Progress |
+| 35,1 | <span id="AN_STATUS_WBCN_AP_MODE_ACTIVE"></span> WBCN_AP_MODE_ACTIVE | Soft AP Active |
+| 35,2 | WBCN_TX_ERROR | Beacon Tx Error |
+| 35,3 | WBCN_STA_TRANSITIONING | STA Connection In Progress |
+| 35,4 | <span id="AN_STATUS_WBCN_NO_CHANNELS"></span> WBCN_NO_CHANNELS | No Beacon Channels Selected |
+| 35,5 | <span id="AN_STATUS_WBCN_INTERVAL_TOO_SHORT"></span> WBCN_INTERVAL_TOO_SHORT | Beacon Interval Too Short |
+
+[WBCN](#AN_MOD_WBCN) Status Codes (Module ID = 35)
 
  
 
@@ -1053,6 +1084,8 @@ CORE Status Codes (Module ID = 0)
 ##### Description
 
 This command controls if characters received from the DTE are echoed back to the DTE.
+
+**This command can only be set; it does not support a query form.**
 
 | Command  | Description |
 |----------|-------------|
@@ -1079,7 +1112,7 @@ This command controls if characters received from the DTE are echoed back to the
 <td style="text-align: left;"><p>&lt;N&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Echo control<br />
+<td style="text-align: left;"><p>Echo control. Default is 1<br />
 </p>
 <table>
 <colgroup>
@@ -1186,6 +1219,8 @@ The Integer Number Base Support bit determines if number bases other then the de
 
 The Default Number Base determines if decimal or hexadecimal numbers are used by default for integers. If this bit is set the default number base will be hexadecimal, otherwise decimal is used.
 
+**This command can only be set; it does not support a query form.**
+
 | Command  | Description |
 |----------|-------------|
 | ATF\<N\> | Set value   |
@@ -1211,7 +1246,7 @@ The Default Number Base determines if decimal or hexadecimal numbers are used by
 <td style="text-align: left;"><p>&lt;N&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Format control<br />
+<td style="text-align: left;"><p>Format control bit field, see description. Default is 7<br />
 </p>
 <table>
 <colgroup>
@@ -1221,27 +1256,27 @@ The Default Number Base determines if decimal or hexadecimal numbers are used by
 <tbody>
 <tr>
 <td style="text-align: left;"><p>0</p></td>
-<td style="text-align: left;"><p>Hex strings only.</p></td>
+<td style="text-align: left;"><p>Bits 0-1 = 0: hex strings only.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>1</p></td>
-<td style="text-align: left;"><p>Hex bytes, basic strings.</p></td>
+<td style="text-align: left;"><p>Bits 0-1 = 1: hex bytes, basic strings.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>2</p></td>
-<td style="text-align: left;"><p>Hex bytes, escaped strings.</p></td>
+<td style="text-align: left;"><p>Bits 0-1 = 2: hex bytes, escaped strings.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>3</p></td>
-<td style="text-align: left;"><p>Escaped strings or hex bytes.</p></td>
+<td style="text-align: left;"><p>Bits 0-1 = 3: escaped strings or hex bytes.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>4</p></td>
-<td style="text-align: left;"><p>Number base support.</p></td>
+<td style="text-align: left;"><p>Bit 2: number base support.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>8</p></td>
-<td style="text-align: left;"><p>Default to hex integers.</p></td>
+<td style="text-align: left;"><p>Bit 3: default to hex integers.</p></td>
 </tr>
 </tbody>
 </table></td>
@@ -1254,7 +1289,9 @@ The Default Number Base determines if decimal or hexadecimal numbers are used by
 
 ##### Description
 
-**This command controls the command/response mode.**
+This command controls the command/response mode.
+
+**This command can only be set; it does not support a query form.**
 
 | Command  | Description |
 |----------|-------------|
@@ -1281,7 +1318,7 @@ The Default Number Base determines if decimal or hexadecimal numbers are used by
 <td style="text-align: left;"><p>&lt;N&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Command mode<br />
+<td style="text-align: left;"><p>Command mode. Default is 0<br />
 </p>
 <table>
 <colgroup>
@@ -1308,7 +1345,9 @@ The Default Number Base determines if decimal or hexadecimal numbers are used by
 
 ##### Description
 
-This command controls the level of verbosity used when display command responses. The response to this command will be in the new verbosity format specified.
+This command controls the level of verbosity used when displaying command responses. The response to this command will be in the new verbosity format specified.
+
+**This command can only be set; it does not support a query form.**
 
 | Command  | Description |
 |----------|-------------|
@@ -1335,7 +1374,7 @@ This command controls the level of verbosity used when display command responses
 <td style="text-align: left;"><p>&lt;N&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Verbosity level<br />
+<td style="text-align: left;"><p>Verbosity level. Default is 5<br />
 </p>
 <table>
 <colgroup>
@@ -1378,7 +1417,9 @@ This command controls the level of verbosity used when display command responses
 
 ##### Description
 
-**This command controls is used to select the local flow control method.**
+This command is used to select the local flow control method.
+
+**This command can only be set; it does not support a query form.**
 
 | Command   | Description |
 |-----------|-------------|
@@ -1405,7 +1446,7 @@ This command controls the level of verbosity used when display command responses
 <td style="text-align: left;"><p>&lt;N&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Flow control<br />
+<td style="text-align: left;"><p>Flow control. Default is 0<br />
 </p>
 <table>
 <colgroup>
@@ -1434,6 +1475,7 @@ This command controls the level of verbosity used when display command responses
 
 ### AEC Reference:
 
+<a id="AN_AEC_AT_CMD_APP_BOOT"></a>
 #### +BOOT
 
 ##### Description
@@ -1484,7 +1526,7 @@ This command requests manufacturer identification.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -1550,7 +1592,7 @@ This command requests model identification.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -1630,7 +1672,7 @@ The version information string is constructed from:
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -1688,6 +1730,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_CMD_AT_CMD_INTERNAL_CMDS_IPR"></a>
 #### +IPR
 
 ##### Description
@@ -1696,7 +1739,7 @@ This command sets the DTE serial port baud rate.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -1795,6 +1838,7 @@ Positive unsigned 32-bit value<br />
 
 ### Command Reference:
 
+<a id="AN_CMD_AT_CFG_CFG"></a>
 #### +CFG
 
 ##### Description
@@ -1805,7 +1849,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -2034,21 +2078,21 @@ Maximum length of string is 5<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>21</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_CFG_STORE_ID_CMD_BAUD"></span> 21</p></td>
 <td style="text-align: left;"><p>&lt;CMD_BAUD&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Command baud rate<br />
-</p></td>
+<td style="text-align: left;"><p>Command baud rate. Default is 230400<br />
+See <a href="#AN_NOTE_CFG_CMD_BAUD">Changing the Command Baud Rate</a> below.</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>22</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_CFG_STORE_ID_CMD_TIMEOUT"></span> 22</p></td>
 <td style="text-align: left;"><p>&lt;CMD_TIMEOUT&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Command baud rate change timeout (ms)<br />
-</p></td>
+<td style="text-align: left;"><p>Command baud rate change timeout (ms), 0 disables fallback. Default is 0<br />
+See <a href="#AN_NOTE_CFG_CMD_BAUD">Changing the Command Baud Rate</a> below.</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
@@ -2077,7 +2121,7 @@ with an ID range 51.1 to 51.2<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>52</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_CFG_STORE_ID_AUTOEXEC_STATUS"></span> 52</p></td>
 <td style="text-align: left;"><p>&lt;AUTOEXEC_STATUS&gt;</p></td>
 <td style="text-align: left;"><p>Status<br />
 (Read Only)</p></td>
@@ -2086,7 +2130,7 @@ with an ID range 51.1 to 51.2<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>100</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_CFG_STORE_ID_DEBUG_PORT"></span> 100</p></td>
 <td style="text-align: left;"><p>&lt;DEBUG_PORT&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
@@ -2111,7 +2155,8 @@ with an ID range 51.1 to 51.2<br />
 <td style="text-align: left;"><p>UART2.</p></td>
 </tr>
 </tbody>
-</table></td>
+</table>
+<p>See <a href="#AN_NOTE_CFG_DEBUG_PORT">Debug Port</a> below.</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
@@ -2126,6 +2171,20 @@ with an ID range 51.1 to 51.2<br />
 </tbody>
 </table>
 
+<a id="AN_NOTE_CFG_CMD_BAUD"></a>
+**Changing the Command Baud Rate**
+
+Writing [CMD_BAUD](#AN_CMD_CFG_STORE_ID_CMD_BAUD) changes the baud rate of the command interface. The change takes effect once the command has completed, so the OK response is sent at the original baud rate.
+
+If [CMD_TIMEOUT](#AN_CMD_CFG_STORE_ID_CMD_TIMEOUT) is non-zero, the DTE must send a valid command at the new baud rate within that many milliseconds. Otherwise the DCE returns to the previous baud rate and [CMD_BAUD](#AN_CMD_CFG_STORE_ID_CMD_BAUD) reverts to its previous value. If [CMD_TIMEOUT](#AN_CMD_CFG_STORE_ID_CMD_TIMEOUT) is 0, there is no fallback.
+
+[+IPR](#AN_CMD_AT_CMD_INTERNAL_CMDS_IPR) also changes the baud rate, but without a fallback. Unlike [+IPR](#AN_CMD_AT_CMD_INTERNAL_CMDS_IPR), [CMD_BAUD](#AN_CMD_CFG_STORE_ID_CMD_BAUD) is a configuration parameter and can be stored using [+CFGCP](#AN_CMD_AT_CFG_CFGCP).
+
+<a id="AN_NOTE_CFG_DEBUG_PORT"></a>
+**Debug Port**
+
+[DEBUG_PORT](#AN_CMD_CFG_STORE_ID_DEBUG_PORT) cannot be set to UART1 while the command interface is using UART1.
+
 ---
 <a id="AN_CMD_AT_CFG_CFGCP"></a>
 #### +CFGCP
@@ -2134,7 +2193,7 @@ with an ID range 51.1 to 51.2<br />
 
 This command is used to copy configurations to/from storage.
 
-Configurations managed by [+CFGCP](#AN_CMD_AT_CFG_CFGCP) are groups of configuration command parameters. The command allows these parameters to be saved to either flash files or archive slots in memory for later retrival.
+Configurations managed by [+CFGCP](#AN_CMD_AT_CFG_CFGCP) are groups of configuration command parameters. The command allows these parameters to be saved to either flash files or archive slots in memory for later retrieval.
 
 [+CFGCP](#AN_CMD_AT_CFG_CFGCP) supports:
 
@@ -2151,7 +2210,37 @@ Configurations managed by [+CFGCP](#AN_CMD_AT_CFG_CFGCP) are groups of configura
 - Duplicating in memory archive slots
 
 > [!NOTE]
-> Only parameter tables of configuration commands which have been changed are stored to flash files or archive slots.
+> Only parameter tables of configuration commands which have been changed are stored to flash files or archive slots. If no parameters have been changed, nothing is stored; the command still succeeds but the destination slot or file is not created.
+
+**Configuration Persistence**
+
+| Location | After reset |
+|----|----|
+| Active configuration (slot 0) | Lost, returns to the defaults (preset 0) |
+| Archive slots 1 and 2, and their timestamps | Lost |
+| Configuration files (file type 20) | Kept |
+| The 'autoexec' configuration file | Kept, and loaded at boot (see [Auto-Execute Configuration](#AN_NOTE_CFG_AUTOEXEC)) |
+
+When a configuration is stored:
+
+- The whole parameter table of a configuration command is stored once any of its elements has been set, not only the elements which were changed.
+
+- Loading preset 0 (`\<ID\>` 0, see [Default Configurations and Presets](#_default_configurations_and_presets)) marks the table as unchanged again, so it is not stored.
+
+- Only configuration elements are stored; read-only and state elements, such as [ARCHIVE_SLOTS](#AN_CMD_CFG_STORE_ID_ARCHIVE_SLOTS) and [AUTOEXEC_STATUS](#AN_CMD_CFG_STORE_ID_AUTOEXEC_STATUS), are not.
+
+- The configurations of [+SOCKC](#AN_CMD_AT_SOCKET_SOCKC) and [+SYSLOGC](#AN_CMD_AT_SYSLOG_SYSLOGC) are never stored.
+
+- The parameters of [+CFG](#AN_CMD_AT_CFG_CFG), including [ARCHIVE_FILTER](#AN_CMD_CFG_STORE_ID_ARCHIVE_FILTER), are stored like any other configuration command.
+
+---
+When a configuration is restored to the active configuration:
+
+- The stored values are applied on top of the current configuration. Tables which are not in the stored configuration keep their current values; to restore a clean configuration, load preset 0 for each command first, or reset the RNWF02.
+
+- The restore stops at the first error, and values already applied are kept.
+
+- A value which is rejected as an invalid parameter is retried, to allow for dependencies between commands; if it is still rejected after 100 ms the restore fails with [TIMEOUT](#AN_STATUS_TIMEOUT).
 
 **Active Configuration**
 
@@ -2159,31 +2248,56 @@ The active configuration is considered to occupy slot 0 for the purposes of the 
 
 **Archive Slots**
 
-Archive slots are numbered 1+, they represent in memory holding locations for configuration sets. The parameters in these slots are not active and not maintained through reset.
+There are two archive slots, numbered 1 and 2; they represent in memory holding locations for configuration sets. The parameters in these slots are not active and not maintained through reset.
 
-Slots can be queried through [ARCHIVE_SLOTS](#AN_CMD_CFG_STORE_ID_ARCHIVE_SLOTS), these parameters contain the timestamp of the configuration set when stored from an active configuration.
+Slots can be queried through [ARCHIVE_SLOTS](#AN_CMD_CFG_STORE_ID_ARCHIVE_SLOTS), these parameters contain the timestamp of the configuration set when stored from an active configuration. The timestamp is the UTC time, so it is close to 1970 if the time has not been set (see [+TIME](#AN_CMD_AT_TIME_TIME)). Querying an empty slot fails. A configuration copied from a file to a slot keeps the timestamp of the file.
 
-A slot can be emptied by writing a zero value to the appropriate index within [ARCHIVE_SLOTS](#AN_CMD_CFG_STORE_ID_ARCHIVE_SLOTS).
+A slot can be emptied by writing a zero value to the appropriate index within [ARCHIVE_SLOTS](#AN_CMD_CFG_STORE_ID_ARCHIVE_SLOTS). Writing a zero value to [ARCHIVE_SLOTS](#AN_CMD_CFG_STORE_ID_ARCHIVE_SLOTS) without an index empties all slots.
 
 **Archive Filters**
 
 The [ARCHIVE_FILTER](#AN_CMD_CFG_STORE_ID_ARCHIVE_FILTER) contains a list of command IDs which are filtered out when storing or loading a configuration set. This allows a partial configuration to be stored or restored.
 
+- Up to 8 command IDs can be added. Each write adds one ID to the list; adding an ID which is already in the list, or a ninth ID, fails.
+
+- An ID can be given as a number or as the command name, which must match exactly including the leading `+` (for example `"+WSTAC"`). Queries return the numeric IDs.
+
+- Writing 0 clears the list.
+
+- The filter is applied both when storing and when restoring, using the filter which is active at that time. A command filtered out when the configuration was stored cannot be restored from it.
+
+See example [Storing a partial configuration](#EXAMPLE_CFG_PARTIAL).
+
 **Archive Files**
 
 Configurations are stored in 'Configuration Files' types which can be queried and deleted through [+FS](#AN_CMD_AT_FS_FLFS_FS).
 
+---
+**Source and Destination**
+
+The source and destination may each be a slot number (0 for the active configuration, or an archive slot) or a configuration file name. Copying from one file to another is not supported. Copying to a file that already exists fails; the existing file must first be deleted using [+FS](#AN_CMD_AT_FS_FLFS_FS). Copying from an empty archive slot, or from a file that does not exist, fails.
+
 **Configuration Summary**
 
-The response to [+CFGCP](#AN_CMD_AT_CFG_CFGCP) is a summary list of command IDs with the number of command elements being stored or restored and the total size of the memory used for that command.
+The response to [+CFGCP](#AN_CMD_AT_CFG_CFGCP) is a summary list of command IDs with the number of command elements being stored or restored and the total size of the memory used for that command. The command ID is reported in hexadecimal. The summary is only reported when the source or destination is the active configuration.
 
+<a id="AN_NOTE_CFG_AUTOEXEC"></a>
 **Auto-Execute Configuration**
 
-If a configuration is stored to an archive file called 'autoexec' it will be automatically loaded during device boot, before a command prompt is presented.
+If a configuration is stored to an archive file called 'autoexec' it is automatically loaded during device boot, once the file system has been mounted. The command interface may already be available when it is loaded, so the host should not rely on the configuration being active as soon as the [+BOOT](#AN_AEC_AT_CMD_APP_BOOT) AEC is received.
 
+After [+BOOT](#AN_AEC_AT_CMD_APP_BOOT), query [AUTOEXEC_STATUS](#AN_CMD_CFG_STORE_ID_AUTOEXEC_STATUS) to check the result:
+
+- [CFG_NOT_PRESENT](#AN_STATUS_CFG_NOT_PRESENT): there is no 'autoexec' file, or it has not been loaded yet.
+
+- Any other status: the status of loading the file; OK if every stored value was applied.
+
+To replace the auto-execute configuration, first delete the 'autoexec' file (file type 20) using [+FS](#AN_CMD_AT_FS_FLFS_FS), then store the new configuration to it.
+
+---
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -2230,7 +2344,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 String<br />
 Byte Array<br />
 </p></td>
-<td style="text-align: left;"><p>Configuration source<br />
+<td style="text-align: left;"><p>Configuration source: slot number (0 = active) or file name<br />
 </p></td>
 </tr>
 <tr>
@@ -2239,7 +2353,7 @@ Byte Array<br />
 String<br />
 Byte Array<br />
 </p></td>
-<td style="text-align: left;"><p>Configuration destination<br />
+<td style="text-align: left;"><p>Configuration destination: slot number (0 = active) or file name<br />
 </p></td>
 </tr>
 </tbody>
@@ -2270,7 +2384,7 @@ Byte Array<br />
 <td style="text-align: left;"><p>&lt;CMD_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Configuration command ID<br />
+<td style="text-align: left;"><p>Configuration command ID (hexadecimal)<br />
 </p></td>
 </tr>
 <tr>
@@ -2325,7 +2439,7 @@ Saving active configuration to storage
 </tr>
 <tr>
 <td>→</td>
-<td><strong>AT<a href="#AN_CMD_AT_NETIF_NETIFC">+NETIFC</a>=0,20,1</strong></td>
+<td><strong>AT<a href="#AN_CMD_AT_NETIF_NETIFC">+NETIFC</a>=0,10,1</strong></td>
 </tr>
 <tr>
 <td>←</td>
@@ -2398,11 +2512,116 @@ Restoring configuration from storage
 </tbody>
 </table>
 
+Storing a partial configuration
+<a id="EXAMPLE_CFG_PARTIAL"></a>
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTAC">+WSTAC</a>=1,"SSID"</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_NETIF_NETIFC">+NETIFC</a>=0,10,1</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_DNS_DNSC">+DNSC</a>=1,"1.1.1.1"</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_CFG_CFG">+CFG</a>=50,"+WSTAC"</strong></td>
+<td>Do not store the Wi-Fi station configuration</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_CFG_CFG">+CFG</a>=50,"+CFG"</strong></td>
+<td>Do not store the system configuration, including this filter</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_CFG_CFGCP">+CFGCP</a>=0,"netonly"</strong></td>
+<td>Store the remaining configuration to a file</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_CMD_AT_CFG_CFGCP">+CFGCP</a>:0x0500,3,49</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_CMD_AT_CFG_CFGCP">+CFGCP</a>:0x0900,11,182</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_CFG_CFG">+CFG</a>=50,0</strong></td>
+<td>Clear the archive filter</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
 ---
+<a id="AN_MOD_DHCP"></a>
 ## DHCP (Module ID = 4)
 
+### Introduction
+
+The RNWF02 provides a DHCP server for clients connected to its soft AP.
+
+The server is configured with [+DHCPSC](#AN_CMD_AT_DHCP_DHCPSC) and is started and stopped together with the soft AP by [+WAP](#AN_CMD_AT_WAP_WAP), if [ENABLED](#AN_CMD_DHCPSC_STORE_ID_ENABLED) is set. While the server is running, its configuration cannot be changed.
+
+#### Address Pool
+
+If no pool start address is configured, the pool is placed in the half of the soft AP subnet that does not contain the RNWF02’s own address. The pool holds at most 32 leases. The soft AP subnet must be /29 or larger, and the pool start address must not be the network, broadcast or RNWF02 address, otherwise the soft AP fails to start.
+
+When the server is running, reading the configuration reports the active pool start, pool end and number of leases. When it is stopped, the configured pool start is reported.
+
+The gateway and DNS server addresses, if configured, are provided to clients in the DHCP offer.
+
+---
 ### Command Reference:
 
+<a id="AN_CMD_AT_DHCP_DHCPSC"></a>
 #### +DHCPSC
 
 ##### Description
@@ -2413,7 +2632,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -2502,9 +2721,10 @@ Byte Array<br />
 </tbody>
 </table>
 
-| Response               | Description   |
-|------------------------|---------------|
-| +DHCPSC:\<ID\>,\<VAL\> | Read response |
+| Response                        | Description       |
+|---------------------------------|-------------------|
+| +DHCPSC:\<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| +DHCPSC:\<ID\>,\<VAL\>          | Read response     |
 
 **Response Syntax**
 
@@ -2523,6 +2743,20 @@ Byte Array<br />
 </tr>
 </thead>
 <tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
+</p></td>
+</tr>
 <tr>
 <td style="text-align: left;"><p>&lt;ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
@@ -2580,11 +2814,11 @@ Byte Array<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_DHCPSC_STORE_ID_ENABLED"></span> 1</p></td>
 <td style="text-align: left;"><p>&lt;ENABLED&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
-<td style="text-align: left;"><p>DCE’s internal DHCP Server<br />
+<td style="text-align: left;"><p>DHCP server enabled when the soft AP is started<br />
 </p>
 <table>
 <colgroup>
@@ -2609,7 +2843,7 @@ Byte Array<br />
 <td style="text-align: left;"><p>&lt;POOL_START&gt;</p></td>
 <td style="text-align: left;"><p>IPv4 Address<br />
 </p></td>
-<td style="text-align: left;"><p>Start address of DHCP server pool<br />
+<td style="text-align: left;"><p>Start address of DHCP server pool (0 = automatic)<br />
 <br />
 Unsigned 32-bit value<br />
 Format of IPv4 address is 'a.b.c.d'<br />
@@ -2621,7 +2855,7 @@ Format of IPv4 address is 'a.b.c.d'<br />
 <td style="text-align: left;"><p>&lt;POOL_END&gt;</p></td>
 <td style="text-align: left;"><p>IPv4 Address<br />
 (Read Only)</p></td>
-<td style="text-align: left;"><p>End address of DHCP server pool<br />
+<td style="text-align: left;"><p>End address of the active DHCP server pool (read only, while running)<br />
 <br />
 Unsigned 32-bit value<br />
 Format of IPv4 address is 'a.b.c.d'<br />
@@ -2633,7 +2867,7 @@ Format of IPv4 address is 'a.b.c.d'<br />
 <td style="text-align: left;"><p>&lt;POOL_LEASES&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 (Read Only)</p></td>
-<td style="text-align: left;"><p>Number of leases<br />
+<td style="text-align: left;"><p>Number of leases in the active pool (read only, while running)<br />
 <br />
 Unsigned 16-bit value<br />
 </p></td>
@@ -2710,25 +2944,29 @@ The default connection method is to use UDP to port 53 of the servers configured
 
 ##### DNS over UDP
 
-For queries to be sent via UDP [+DNSC](#AN_CMD_AT_DNS_DNSC) option [DNS_CONN_PREF](#AN_CMD_DNSC_STORE_ID_DNS_CONN_PREF) must be set to 0 (UDP/TLS). All connections to the configured servers will now be via UDP.
+For queries to be sent via UDP, [+DNSC](#AN_CMD_AT_DNS_DNSC) option [DNS_CONN_PREF](#AN_CMD_DNSC_STORE_ID_DNS_CONN_PREF) must be set to 0 (UDP/TLS) and [TLS_CONF](#AN_CMD_DNSC_STORE_ID_TLS_CONF) must be 0. These are the defaults.
 
 The UDP port on the server used for queries will be set by [DNS_SRV_PORT](#AN_CMD_DNSC_STORE_ID_DNS_SRV_PORT) which defaults to 53.
 
 ##### DNS over TCP
 
-For queries to be sent via TCP [+DNSC](#AN_CMD_AT_DNS_DNSC) option [DNS_CONN_PREF](#AN_CMD_DNSC_STORE_ID_DNS_CONN_PREF) must be set to 1 (TCP/TLS). All connections to the configured servers will now be via TCP.
+For queries to be sent via TCP, [+DNSC](#AN_CMD_AT_DNS_DNSC) option [DNS_CONN_PREF](#AN_CMD_DNSC_STORE_ID_DNS_CONN_PREF) must be set to 1 (TCP/TLS) and [TLS_CONF](#AN_CMD_DNSC_STORE_ID_TLS_CONF) must be 0.
 
 The TCP port on the server used for queries will be set by [DNS_SRV_PORT](#AN_CMD_DNSC_STORE_ID_DNS_SRV_PORT) which defaults to 53.
 
-Option [DNS_CONN_IDLE_TIMEOUT](#AN_CMD_DNSC_STORE_ID_DNS_CONN_IDLE_TIMEOUT) can be used to set an idle timeout, the DNC module will request the IDLE timeout from the DNS server and honour that time period.
+Option [DNS_CONN_IDLE_TIMEOUT](#AN_CMD_DNSC_STORE_ID_DNS_CONN_IDLE_TIMEOUT) can be used to set an idle timeout, the DNS module will request the IDLE timeout from the DNS server and honour that time period.
 
 ##### DNS over TLS
 
-For queries to be sent via TLS [+DNSC](#AN_CMD_AT_DNS_DNSC) option [DNS_CONN_PREF](#AN_CMD_DNSC_STORE_ID_DNS_CONN_PREF) must be set to 1 (TCP/TLS). All connections to the configured servers will now be via TLS.
+For queries to be sent via TLS, [+DNSC](#AN_CMD_AT_DNS_DNSC) option [DNS_CONN_PREF](#AN_CMD_DNSC_STORE_ID_DNS_CONN_PREF) must be set to 1 (TCP/TLS) and [TLS_CONF](#AN_CMD_DNSC_STORE_ID_TLS_CONF) must be set to a TLS configuration index (see [+TLSC](#AN_CMD_AT_TLS_TLSC)). DTLS ([DNS_CONN_PREF](#AN_CMD_DNSC_STORE_ID_DNS_CONN_PREF) set to 0 with a TLS configuration) is not supported.
+
+The TLS configuration must allow the DNS server to be authenticated. By default this requires a CA certificate and the server’s domain name to be configured; see [TLS](#AN_MOD_TLS).
+
+When TLS is used, queries are sent only to the first configured DNS server.
 
 The TLS port on the server used for queries will be set by [DNS_SRV_SECURE_PORT](#AN_CMD_DNSC_STORE_ID_DNS_SRV_SECURE_PORT) which defaults to 853.
 
-Option [DNS_CONN_IDLE_TIMEOUT](#AN_CMD_DNSC_STORE_ID_DNS_CONN_IDLE_TIMEOUT) can be used to set an idle timeout, the DNC module will request the IDLE timeout from the DNS server and honour that time period.
+Option [DNS_CONN_IDLE_TIMEOUT](#AN_CMD_DNSC_STORE_ID_DNS_CONN_IDLE_TIMEOUT) can be used to set an idle timeout, the DNS module will request the IDLE timeout from the DNS server and honour that time period.
 
 ---
 #### DNSSEC Support
@@ -2737,7 +2975,7 @@ Support for DNSSEC is configured by [+DNSC](#AN_CMD_AT_DNS_DNSC) option [DNS_DNS
 
 1.  No support, the DO bit of EDNS0 extended flags is not set indicating that the DCE is unaware of DNSSEC operations.
 
-2.  DNSSEC aware, this sets the DO bit of EDNS0 extended flags to indicate that DNSSEC RRs should be sent in response to queries. These RRs will be past the to DTE for further processing.
+2.  DNSSEC aware, this sets the DO bit of EDNS0 extended flags to indicate that DNSSEC RRs should be sent in response to queries. These RRs will be passed to the DTE for further processing.
 
 3.  DNSSEC authenticated answer only. In addition to the previous state the DNS module will not process any query responses which do not have either the AA bit set (indicating the DNS server is an authority for the domain) or the AD bit set (indicating the server has authenticated the response).
 
@@ -2765,7 +3003,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -2922,14 +3160,14 @@ Byte Array<br />
 <td style="text-align: left;"><p>IPv4 Address<br />
 IPv6 Address<br />
 </p></td>
-<td style="text-align: left;"><p>DNS server IP address<br />
+<td style="text-align: left;"><p>DNS server IP address. 1.0-1.1 configured (writable), 1.0-1.3 active (read only)<br />
 <br />
 Unsigned 32-bit value<br />
 Format of IPv4 address is 'a.b.c.d'<br />
 Format of IPv6 address is 'a:b:c:d::e:f'<br />
 This is a multiple value parameter<br />
 with an ID range 1.0 to 1.3<br />
-</p></td>
+See <a href="#AN_NOTE_DNSC_DNS_SVR">DNS Servers</a> below.</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
@@ -3013,11 +3251,11 @@ Unsigned 16-bit value<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_DNSC_STORE_ID_TLS_CONF"></span> 7</p></td>
 <td style="text-align: left;"><p>&lt;TLS_CONF&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>TLS configuration index (see +TLSC)<br />
+<td style="text-align: left;"><p>TLS configuration index (see +TLSC). 0 disables TLS<br />
 <br />
 Valid range is 0 to 4<br />
 </p></td>
@@ -3079,7 +3317,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;DNS_CONN_PREF&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Connection preference<br />
+<td style="text-align: left;"><p>Connection preference. TLS is used if TLS_CONF is set<br />
 </p>
 <table>
 <colgroup>
@@ -3146,6 +3384,17 @@ Unsigned 16-bit value<br />
 </tbody>
 </table>
 
+<a id="AN_NOTE_DNSC_DNS_SVR"></a>
+**DNS Servers**
+
+[DNS_SVR](#AN_CMD_DNSC_STORE_ID_DNS_SVR) holds two lists:
+
+- **Configured servers**, indices 1.0 and 1.1. These can be set, and are reported while the network interface is down. They are used when [DNS_AUTO](#AN_CMD_DNSC_STORE_ID_DNS_AUTO) is 0.
+
+- **Active servers**, indices 1.0 to 1.3. These are read only and reported while the network interface is up. They contain the servers currently in use, from the configured list or from DHCP / router advertisements.
+
+Setting [DNS_SVR](#AN_CMD_DNSC_STORE_ID_DNS_SVR) without an index adds the address to the next free configured slot; this fails if both slots are in use. Setting it to 0.0.0.0 without an index removes all configured servers.
+
 ---
 <a id="AN_CMD_AT_DNS_DNSRESOLV"></a>
 #### +DNSRESOLV
@@ -3156,13 +3405,31 @@ This command is used to resolve domain names via DNS.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
-| Command                              | Description | [Sec](#_security_model) |
-|--------------------------------------|-------------|-------------------------|
-| AT+DNSRESOLV=\<TYPE\>,\<QUERY_NAME\> | \+          | `GGGG`                  |
-
-**Command Syntax**
+<table>
+<caption>Command Syntax</caption>
+<colgroup>
+<col style="width: 66%" />
+<col style="width: 28%" />
+<col style="width: 5%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Command</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;"><a href="#_security_model">Sec</a></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>AT+DNSRESOLV=&lt;TYPE&gt;,&lt;QUERY_NAME&gt;</p></td>
+<td style="text-align: left;"><p>Resolve a name for the specified record type<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+</tbody>
+</table>
 
 <table>
 <caption>Command Parameter Syntax</caption>
@@ -3245,7 +3512,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </tr>
 <tr>
 <td style="text-align: left;"><p>255</p></td>
-<td style="text-align: left;"><p>A+AAAA.</p></td>
+<td style="text-align: left;"><p>A and/or AAAA, according to DNS_PROTO_PREF.</p></td>
 </tr>
 </tbody>
 </table>
@@ -3372,7 +3639,7 @@ Maximum length of string is 256<br />
 </tr>
 <tr>
 <td style="text-align: left;"><p>255</p></td>
-<td style="text-align: left;"><p>Unspecified.</p></td>
+<td style="text-align: left;"><p>A and/or AAAA (DNSERR only).</p></td>
 </tr>
 </tbody>
 </table>
@@ -3594,7 +3861,7 @@ Unsigned 32-bit value<br />
 <td style="text-align: left;"><p>&lt;SIG_EXPIRE&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Signature ixpiration<br />
+<td style="text-align: left;"><p>Signature expiration<br />
 <br />
 Unsigned 32-bit value<br />
 </p></td>
@@ -3770,7 +4037,7 @@ Unsigned 16-bit value<br />
 </tr>
 <tr>
 <td style="text-align: left;"><p>255</p></td>
-<td style="text-align: left;"><p>Unspecified.</p></td>
+<td style="text-align: left;"><p>A and/or AAAA (DNSERR only).</p></td>
 </tr>
 </tbody>
 </table>
@@ -4365,7 +4632,7 @@ The store sub-command initiates a file transfer from the DCE to the DTE.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -4705,9 +4972,17 @@ Positive unsigned 16-bit value<br />
 
 This command performs a filesystem transfer operation.
 
+The FS-TSFR protocol transfers a file in numbered blocks. A transfer is started with [+FS](#AN_CMD_AT_FS_FLFS_FS) (load or store), which returns a transfer handle. Only one transfer may be active at a time. The syntax forms that apply depend on the direction of the transfer:
+
+- **Load** (DTE to DCE): send each block with `AT+FSTSFR=\<TSFR_HANDLE\>,\<BLOCK_NUM\>,\<DATA\>`, starting at block 1. A block of 1 to 128 bytes is sent as a 128-byte block, and 129 to 1024 bytes as a 1024-byte block. Only the final block may be shorter than its block size; it is padded by the DCE. An optional CRC-16/XMODEM of \<DATA\> may be supplied. The transfer completes automatically when all bytes of the file have been sent. `AT+FSTSFR=\<TSFR_HANDLE\>,\<BLOCK_NUM\>` ends the transfer early.
+
+- **Store** (DCE to DTE): read each block with `AT+FSTSFR=\<TSFR_HANDLE\>,\<BLOCK_NUM\>` (up to 128 bytes) or `AT+FSTSFR=\<TSFR_HANDLE\>,\<BLOCK_NUM\>,\<DATA_LENGTH\>`, starting at block 1. The transfer completes when all bytes have been read; a \<BLOCK_NUM\> of 0 ends it early.
+
+In both directions \<BLOCK_NUM\> must be the next expected block number. `AT+FSTSFR=\<TSFR_HANDLE\>` reports the last block number transferred and the number of bytes remaining.
+
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -4738,31 +5013,31 @@ Default [security](#_security_model) for the command is: `GGGG`
 </tr>
 <tr>
 <td style="text-align: left;"><p>AT+FSTSFR=&lt;TSFR_HANDLE&gt;,&lt;BLOCK_NUM&gt;</p></td>
-<td style="text-align: left;"><p>Transfer complete<br />
+<td style="text-align: left;"><p>Load: end transfer<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>AT+FSTSFR=&lt;TSFR_HANDLE&gt;,&lt;BLOCK_NUM&gt;,&lt;DATA&gt;</p></td>
-<td style="text-align: left;"><p>Transfer data<br />
+<td style="text-align: left;"><p>Load: send block<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>AT+FSTSFR=&lt;TSFR_HANDLE&gt;,&lt;BLOCK_NUM&gt;,&lt;DATA&gt;,&lt;CRC&gt;</p></td>
-<td style="text-align: left;"><p>Transfer data (with CRC)<br />
+<td style="text-align: left;"><p>Load: send block (with CRC)<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>AT+FSTSFR=&lt;TSFR_HANDLE&gt;,&lt;BLOCK_NUM&gt;</p></td>
-<td style="text-align: left;"><p>Store fixed size data, or end<br />
+<td style="text-align: left;"><p>Store: read block (up to 128 bytes), or end<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>AT+FSTSFR=&lt;TSFR_HANDLE&gt;,&lt;BLOCK_NUM&gt;,&lt;DATA_LENGTH&gt;</p></td>
-<td style="text-align: left;"><p>Store specified data<br />
+<td style="text-align: left;"><p>Store: read block (up to DATA_LENGTH bytes)<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
@@ -4868,7 +5143,7 @@ Positive unsigned 16-bit value<br />
 </p></td>
 <td style="text-align: left;"><p>Block number<br />
 <br />
-Positive unsigned 16-bit value<br />
+Unsigned 8-bit value<br />
 </p></td>
 </tr>
 <tr>
@@ -5155,7 +5430,7 @@ File transfer using XModem+CRC with [+FS](#AN_CMD_AT_FS_FLFS_FS)
 <td></td>
 </tr>
 <tr>
-<td>→</td>
+<td>←</td>
 <td><code>OK</code></td>
 <td>AT Command completion</td>
 </tr>
@@ -5175,11 +5450,6 @@ List and delete a file
 <tr>
 <td>←</td>
 <td><strong><a href="#AN_CMD_AT_FS_FLFS_FS">+FS</a>:2,1,"AmazonRootCA1"</strong></td>
-<td></td>
-</tr>
-<tr>
-<td>←</td>
-<td><strong><a href="#AN_CMD_AT_FS_FLFS_FS">+FS</a>:2,1,"BaltimoreCyberTrustRoot"</strong></td>
 <td></td>
 </tr>
 <tr>
@@ -5538,6 +5808,379 @@ File store using FS-TSFR protocol
 <a id="AN_MOD_MQTT"></a>
 ## MQTT (Module ID = 8)
 
+### Introduction
+
+The RNWF02 supports MQTT v3.1.1 and MQTT v5.0 client functionality via AT commands, enabling communication with MQTT brokers for IoT applications, telemetry, messaging, and cloud integration.
+
+#### Key Features
+
+##### Protocol Support
+
+Both MQTT v3.1.1 and MQTT v5.0 protocols are supported. MQTT v5.0 includes enhanced features such as properties, reason codes, and improved error reporting.
+
+##### Quality of Service (QoS)
+
+All three QoS levels are supported:
+
+- QoS 0 (At most once) - Fire and forget, no acknowledgment
+
+- QoS 1 (At least once) - Guaranteed delivery with acknowledgment
+
+- QoS 2 (Exactly once) - Guaranteed single delivery with four-way handshake
+
+##### TLS Security
+
+Secure MQTT connections (MQTTS) over TLS are supported by configuring a TLS context before connecting.
+
+##### Large Message Handling
+
+The device can send and receive messages larger than its internal buffers through message fragmentation. The MQTT stack handles reassembly of multi-chunk messages automatically.
+
+---
+#### Connecting to a Broker
+
+To establish an MQTT connection:
+
+1.  Configure the broker parameters using [+MQTTC](#AN_CMD_AT_MQTT_MQTTC):
+
+    - [BROKER_ADDR](#AN_CMD_MQTTC_STORE_ID_BROKER_ADDR) - Broker hostname or IP address
+
+    - [BROKER_PORT](#AN_CMD_MQTTC_STORE_ID_BROKER_PORT) - Broker port (typically 1883 for MQTT, 8883 for MQTTS)
+
+    - [CLIENT_ID](#AN_CMD_MQTTC_STORE_ID_CLIENT_ID) - Unique client identifier
+
+    - [USERNAME](#AN_CMD_MQTTC_STORE_ID_USERNAME) and [PASSWORD](#AN_CMD_MQTTC_STORE_ID_PASSWORD) - Authentication credentials (if required)
+
+2.  For secure connections, configure TLS using [+MQTTC](#AN_CMD_AT_MQTT_MQTTC) parameter [TLS_CONF](#AN_CMD_MQTTC_STORE_ID_TLS_CONF) to reference a TLS context configured via [TLSC](#AN_MOD_TLS).
+
+3.  Connect to the broker using [+MQTTCONN](#AN_CMD_AT_MQTT_MQTTCONN).
+
+4.  Monitor the [+MQTTCONN](#AN_AEC_AT_MQTT_MQTTCONN) AEC for connection status.
+
+---
+#### Publishing Messages
+
+Publish messages to topics using [+MQTTPUB](#AN_CMD_AT_MQTT_MQTTPUB). The command accepts the topic name, QoS level, retain flag, and message payload.
+
+##### Single Message Mode (FRAG=0)
+
+For messages that fit within the AT command buffer, use [+MQTTPUB](#AN_CMD_AT_MQTT_MQTTPUB) with [FRAG](#AN_CMD_AT_MQTT_MQTTPUB_FRAG)=0:
+
+    AT+MQTTPUB=0,<QOS>,<RETAIN>,"<topic>",<payload>
+
+For QoS 0, the response is simply `OK`. For QoS 1 or 2, the response includes the packet ID: `+MQTTPUB:<packet_id>` followed by `OK`. The same packet ID will appear in the subsequent [+MQTTPUBACK](#AN_AEC_AT_MQTT_MQTTPUBACK) or [+MQTTPUBCOMP](#AN_AEC_AT_MQTT_MQTTPUBCOMP) AEC.
+
+The AT command interface has a maximum command line length which limits the payload size. The maximum depends on encoding format and topic name length:
+
+| **Factor** | **Size** |
+|----|----|
+| Maximum command line length | 3072 bytes |
+| Command overhead (`AT+MQTTPUB=0,<qos>,<retain>,"<topic>",`) | ~30 bytes |
+| Topic name | variable |
+| Hex encoding `[xxxx]` | 2x payload size + 2 bytes |
+| String encoding `"…​"` | 1x payload size + 2 bytes |
+
+| **Encoding** | **Typical Max Payload** | **Notes**                            |
+|--------------|-------------------------|--------------------------------------|
+| Hex `[xxxx]` | ~1500 bytes             | Binary-safe, recommended             |
+| String `"…​"` | ~3000 bytes             | Requires escaping special characters |
+
+> [!NOTE]
+> For reliable operation with typical topic names, limit single-message payloads to approximately 1500 bytes when using hex encoding.
+
+---
+##### Fragmented Publish Mode (FRAG\>=1)
+
+For payloads exceeding the AT command buffer limit, use fragmented publish to send large messages in multiple parts. The firmware reassembles fragments before transmitting a single MQTT PUBLISH packet.
+
+###### Starting a Fragment Sequence (First Fragment)
+
+    AT+MQTTPUB=1,<QOS>,<RETAIN>,"<topic>"|<alias>,<payload>
+
+- [FRAG](#AN_CMD_AT_MQTT_MQTTPUB_FRAG)=1 indicates the first fragment of a new sequence
+
+- [QOS](#AN_CMD_AT_MQTT_MQTTPUB_QOS), [RETAIN](#AN_CMD_AT_MQTT_MQTTPUB_RETAIN), and [topic](#AN_CMD_AT_MQTT_MQTTPUB_TOPIC_NAME_ID) are specified only in the first fragment
+
+- Topic can be a string `"topic/name"` or an integer topic alias (MQTT v5.0)
+
+- Returns `+MQTTPUB:<next_frag>,<total_bytes>` on success
+
+###### Continuation Fragments
+
+    AT+MQTTPUB=<FRAG>,<COMP>,<payload>
+
+- [FRAG](#AN_CMD_AT_MQTT_MQTTPUB_FRAG) = fragment number (must match expected sequence)
+
+- [COMP](#AN_CMD_AT_MQTT_MQTTPUB_COMP) = 0 for continuation, 1 for final fragment
+
+- Returns `+MQTTPUB:<next_frag>,<total_bytes>` after each non-final fragment
+
+- For the final fragment (COMP=1) with QoS 1 or 2, returns `+MQTTPUB:<packet_id>` before OK
+
+###### Query Fragment State
+
+    AT+MQTTPUB
+
+Returns `+MQTTPUB:<expected_frag>,<total_bytes>,"<topic>"` if a sequence is in progress, or `OK` with no response if idle.
+
+###### Example: Sending a 4KB Payload (QoS 0)
+
+    AT+MQTTPUB=1,0,0,"sensor/data",[<first_500_bytes_hex>]
+    +MQTTPUB:2,500
+    OK
+    AT+MQTTPUB=2,0,[<next_500_bytes_hex>]
+    +MQTTPUB:3,1000
+    OK
+    AT+MQTTPUB=3,0,[<next_500_bytes_hex>]
+    +MQTTPUB:4,1500
+    OK
+    ...
+    AT+MQTTPUB=9,1,[<final_bytes_hex>]
+    OK
+    +MQTTPUBSENT
+
+###### Example: Sending with QoS 1
+
+For QoS 1/2, the final fragment returns the packet ID, which matches the subsequent acknowledgement AEC:
+
+    AT+MQTTPUB=1,1,0,"sensor/data",[<first_500_bytes_hex>]
+    +MQTTPUB:2,500
+    OK
+    AT+MQTTPUB=2,0,[<next_500_bytes_hex>]
+    +MQTTPUB:3,1000
+    OK
+    ...
+    AT+MQTTPUB=9,1,[<final_bytes_hex>]
+    +MQTTPUB:42
+    OK
+    +MQTTPUBACK:42
+
+###### Fragmentation Limits
+
+| **Constraint**      | **Value**           | **Notes**                    |
+|---------------------|---------------------|------------------------------|
+| Maximum fragments   | 64                  | Per message                  |
+| Maximum packet size | 16,384 bytes (16KB) | Advertised protocol limit    |
+| Fragment size       | ~500-1500 bytes     | Limited by AT command buffer |
+| Timeout             | 30 seconds          | Between fragments            |
+
+> [!NOTE]
+> The 16KB limit applies to the total MQTT packet size, which includes the topic name, MQTT v5 properties (if enabled), and payload. With a short topic and no properties, payloads up to ~16KB are possible. Longer topics or additional properties reduce the available payload space.
+
+###### Error Handling
+
+- Out-of-sequence fragments are rejected and the context is cleaned up
+
+- Starting a new sequence ([FRAG](#AN_CMD_AT_MQTT_MQTTPUB_FRAG)=1) while one is in progress is rejected
+
+- Continuation fragments ([FRAG](#AN_CMD_AT_MQTT_MQTTPUB_FRAG)\>1) without a prior first fragment are rejected
+
+- Invalid QoS values (\>2) are rejected before allocating context
+
+- Exceeding the maximum fragment count or payload size returns an error
+
+---
+#### Publish Completion Events
+
+When a publish operation completes, the device emits an Asynchronous Event Code (AEC) to signal completion. This provides reliable synchronization for back-to-back publishes without requiring arbitrary delays.
+
+| **QoS** | **AEC** | **Meaning** |
+|----|----|----|
+| 0 | [+MQTTPUBSENT](#AN_AEC_AT_MQTT_MQTTPUBSENT) | Publish sent to broker (fire-and-forget complete) |
+| 1 | [+MQTTPUBACK](#AN_AEC_AT_MQTT_MQTTPUBACK) | PUBACK received from broker |
+| 2 | [+MQTTPUBCOMP](#AN_AEC_AT_MQTT_MQTTPUBCOMP) | PUBCOMP received from broker (4-way handshake complete) |
+
+If a publish fails, [+MQTTPUBERR](#AN_AEC_AT_MQTT_MQTTPUBERR) is emitted (with packet_id for QoS 1/2).
+
+> [!IMPORTANT]
+> Wait for the completion AEC before sending the next publish command. The device can only process one publish at a time. Sending a new publish while the previous one is in the PUBLISHING state will result in an error.
+
+#### Subscribing and Receiving Messages
+
+Subscribe to topics using [+MQTTSUB](#AN_CMD_AT_MQTT_MQTTSUB). When messages arrive on subscribed topics, the [+MQTTSUBRX](#AN_AEC_AT_MQTT_MQTTSUBRX) AEC is emitted.
+
+##### Inline vs Buffered Message Delivery
+
+The [READ_THRESHOLD](#AN_CMD_MQTTC_STORE_ID_READ_THRESHOLD) parameter sets the largest message, in bytes, that is delivered inline. The default is 128 bytes.
+
+- **Inline delivery**: a received message whose length is less than or equal to the threshold is included directly in the [+MQTTSUBRX](#AN_AEC_AT_MQTT_MQTTSUBRX) AEC.
+
+- **Buffered delivery**: a received message longer than the threshold is held by the DCE. The [+MQTTSUBRX](#AN_AEC_AT_MQTT_MQTTSUBRX) AEC reports only the message ID and length, and the DTE must use [+MQTTSUBRD](#AN_CMD_AT_MQTT_MQTTSUBRD) to retrieve the data.
+
+Messages received in more than one part are always buffered, whatever the threshold. Messages larger than approximately 1 KB will therefore always require [+MQTTSUBRD](#AN_CMD_AT_MQTT_MQTTSUBRD).
+
+> [!NOTE]
+> Setting the threshold to 0 causes all received messages to be buffered regardless of size, which is useful when consistent handling of all messages is required.
+
+---
+#### Maximum Packet Size (MQTT v5.0)
+
+MQTT v5.0 introduces the Maximum Packet Size property (ID 39), which informs the broker of the largest MQTT packet the client can receive. This property is configured via [+MQTTPROPTX](#AN_CMD_AT_MQTT_MQTTPROPTX) and controlled by [+MQTTPROPTXS](#AN_CMD_AT_MQTT_MQTTPROPTXS).
+
+##### Default Behaviour
+
+- The Maximum Packet Size property defaults to 16384 bytes (16KB).
+
+- The property is **enabled by default** and will be included in the CONNECT packet.
+
+- The broker will respect this limit and will not send packets larger than the specified size.
+
+##### Configuration Options
+
+| **Action**                    | **Command**             |
+|-------------------------------|-------------------------|
+| Query current value           | `AT+MQTTPROPTX=39`      |
+| Set to 8KB                    | `AT+MQTTPROPTX=39,8192` |
+| Disable property in CONNECT   | `AT+MQTTPROPTXS=39,0`   |
+| Re-enable property in CONNECT | `AT+MQTTPROPTXS=39,1`   |
+
+##### Validation Rules
+
+- The value cannot be set to 0 (zero).
+
+- The value cannot exceed the system maximum of 16384 bytes.
+
+##### Internal Enforcement
+
+The device enforces the packet size limit internally regardless of broker behaviour:
+
+- When the property is **enabled** in CONNECT: The configured value is enforced. The broker knows the limit and should not exceed it, but the device will reject oversized packets as a safety measure.
+
+- When the property is **disabled** in CONNECT: The system maximum (16384 bytes) is enforced. Since the broker was not informed of any limit, the device uses its maximum capability.
+
+- For **MQTT v3.1.1** connections: The system maximum (16384 bytes) is always enforced, as v3.1.1 does not support the Maximum Packet Size property.
+
+> [!NOTE]
+> If you configure a lower Maximum Packet Size value, then disable the property and connect to a different broker, the device will use the system maximum (16KB) for enforcement - not your previously configured value. This ensures the device accepts the largest packets possible when the broker has not been informed of any limit.
+
+---
+##### Oversized Received Messages
+
+A broker that does not honour the Maximum Packet Size property - or that was never told the limit because the property was disabled in CONNECT - may still forward a message larger than the device can buffer. Such a message cannot be delivered, but it also cannot simply be abandoned: the remainder of the payload would be left in the socket, leaving the MQTT byte stream out of frame.
+
+The device therefore handles an undeliverable received message as follows:
+
+1.  The payload is read from the connection and discarded, keeping the MQTT stream framed and allowing the QoS 1/QoS 2 acknowledgement to be sent.
+
+2.  The [+MQTTSUBRXERR](#AN_AEC_AT_MQTT_MQTTSUBRXERR) AEC is emitted, reporting why the message was dropped along with the topic, packet identifier and total message length.
+
+3.  Once the payload has been fully drained, the session is closed cleanly with an MQTT v5.0 DISCONNECT carrying reason code `0x95` (Packet too large) for an oversized message, or `0x83` (Implementation specific error) for the other drop reasons.
+
+**The reported reasons are:**
+
+| **REASON** | **Meaning**                                                  |
+|------------|--------------------------------------------------------------|
+| 1          | The message exceeds the maximum packet size.                 |
+| 2          | There was insufficient memory to buffer the message.         |
+| 3          | The message did not match any active subscription.           |
+| 4          | The message length was inconsistent with the receive buffer. |
+
+No data from a dropped message is delivered, and subsequent messages are unaffected. The session must be re-established after the disconnection, and any subscriptions re-created, as the subscription list is cleared when the session closes.
+
+> [!NOTE]
+> `AT+MQTTPROPTXS=39,1` (the default) is the way to avoid this situation altogether: when the broker is told the limit, it will not forward an oversized message in the first place. `AT+MQTTPROPTX=39,\<VALUE\>` lowers the advertised limit below the 16KB system maximum if the DTE cannot handle messages that large.
+
+---
+#### MQTT v5.0 Properties
+
+MQTT v5.0 supports additional properties that can be included in various packet types. Properties are managed using:
+
+- [+MQTTPROPTX](#AN_CMD_AT_MQTT_MQTTPROPTX) - Configure property values to transmit
+
+- [+MQTTPROPTXS](#AN_CMD_AT_MQTT_MQTTPROPTXS) - Select which properties to include in transmitted packets
+
+- [+MQTTPROPRX](#AN_CMD_AT_MQTT_MQTTPROPRX) - Query properties received from the broker
+
+Properties are only added to packets where they are applicable according to the MQTT v5.0 specification.
+
+##### Properties with Fragmented Publish
+
+MQTT v5.0 properties configured via [+MQTTPROPTX](#AN_CMD_AT_MQTT_MQTTPROPTX) and enabled via [+MQTTPROPTXS](#AN_CMD_AT_MQTT_MQTTPROPTXS) are automatically included in fragmented publish messages. Configure properties before sending the first fragment (`FRAG=1`).
+
+**Supported publish properties include:**
+
+| **ID** | **Property** | **Description** |
+|----|----|----|
+| 1 | Payload Format Indicator | 0=binary, 1=UTF-8 text |
+| 2 | Message Expiry Interval | Seconds until message expires |
+| 3 | Content Type | MIME type string |
+| 8 | Response Topic | Topic for request/response pattern |
+| 9 | Correlation Data | Binary data for request/response correlation |
+| 35 | Topic Alias | Integer alias instead of topic string |
+| 38 | User Property | Custom key-value pairs |
+
+###### Topic Alias with Fragmented Publish
+
+Topic aliases (MQTT v5.0) can reduce bandwidth by replacing topic strings with integers:
+
+1.  First, establish the alias by publishing with the topic name:
+
+        AT+MQTTPROPTX=35,1
+        AT+MQTTPROPTXS=35,1
+        AT+MQTTPUB=0,0,0,"sensor/data","first_message"
+
+2.  Subsequent publishes can use the alias (integer) instead of the topic string:
+
+        AT+MQTTPUB=1,0,0,1,[<hex_payload>]
+        AT+MQTTPUB=2,1,[<more_hex_payload>]
+
+The alias value must be within the broker’s advertised `topicAliasMax` (query with `AT+MQTTPROPRX=34`).
+
+---
+#### Typical Usage Flow
+
+A typical MQTT session follows this pattern:
+
+1.  Configure Wi-Fi and establish network connectivity
+
+2.  (Optional) Configure SNTP for accurate timestamps
+
+3.  Configure TLS context if using secure connection
+
+4.  Configure MQTT client parameters
+
+5.  (Optional) Adjust MQTT v5.0 properties
+
+6.  Connect to the broker
+
+7.  Subscribe to topics of interest
+
+8.  Publish messages and/or receive subscribed messages
+
+9.  Disconnect when finished
+
+---
+#### Troubleshooting
+
+##### Connection Failures
+
+Ensure the broker URL, port, and credentials are correct. For TLS connections, verify the CA certificate is loaded and the TLS context is properly configured.
+
+##### Message Size Errors
+
+If publishing fails, check that the hex-encoded payload plus command overhead does not exceed the command line limit. For received messages that appear truncated, check the Maximum Packet Size configuration.
+
+##### QoS 2 Timeouts
+
+QoS 2 requires a complete four-way handshake. Ensure network connectivity is stable and the broker supports QoS 2.
+
+##### Fragmented Publish Errors
+
+- **"MQTT Error" on continuation fragment**: Check that fragments are sent in sequence. Use `AT+MQTTPUB` (query) to see expected fragment number.
+
+- **Fragment sequence aborted**: Ensure fragments are sent within the 30-second timeout. After timeout or error, start a new sequence with `FRAG=1`.
+
+- **"Invalid Parameter" on first fragment**: Verify QoS is 0-2 and topic alias (if used) is within broker’s limit.
+
+- **Payload size exceeded**: Total payload across all fragments cannot exceed 16KB. Query `AT+MQTTPUB` to check accumulated size.
+
+##### Publish Timing Issues
+
+- **Error when sending consecutive publishes**: Always wait for the completion AEC (`+MQTTPUBSENT`, `+MQTTPUBACK`, or `+MQTTPUBCOMP`) before sending the next publish.
+
+- **No completion AEC received**: Check network connectivity. For QoS 1/2, the AEC depends on broker acknowledgment.
+
+---
 ### Command Reference:
 
 <a id="AN_CMD_AT_MQTT_MQTTC"></a>
@@ -5551,7 +6194,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -5703,7 +6346,7 @@ Byte Array<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_MQTTC_STORE_ID_BROKER_ADDR"></span> 1</p></td>
 <td style="text-align: left;"><p>&lt;BROKER_ADDR&gt;</p></td>
 <td style="text-align: left;"><p>String<br />
 IPv4 Address<br />
@@ -5717,7 +6360,7 @@ Format of IPv6 address is 'a:b:c:d::e:f'<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>2</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_MQTTC_STORE_ID_BROKER_PORT"></span> 2</p></td>
 <td style="text-align: left;"><p>&lt;BROKER_PORT&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
@@ -5728,7 +6371,7 @@ Unsigned 16-bit value<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>3</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_MQTTC_STORE_ID_CLIENT_ID"></span> 3</p></td>
 <td style="text-align: left;"><p>&lt;CLIENT_ID&gt;</p></td>
 <td style="text-align: left;"><p>String<br />
 </p></td>
@@ -5738,7 +6381,7 @@ Maximum length of string is 64<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>4</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_MQTTC_STORE_ID_USERNAME"></span> 4</p></td>
 <td style="text-align: left;"><p>&lt;USERNAME&gt;</p></td>
 <td style="text-align: left;"><p>String<br />
 </p></td>
@@ -5748,7 +6391,7 @@ Maximum length of string is 128<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>5</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_MQTTC_STORE_ID_PASSWORD"></span> 5</p></td>
 <td style="text-align: left;"><p>&lt;PASSWORD&gt;</p></td>
 <td style="text-align: left;"><p>String<br />
 </p></td>
@@ -5769,11 +6412,11 @@ Valid range is 0 to 0x7FFF<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_MQTTC_STORE_ID_TLS_CONF"></span> 7</p></td>
 <td style="text-align: left;"><p>&lt;TLS_CONF&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>TLS configuration index (see +TLSC)<br />
+<td style="text-align: left;"><p>TLS configuration index (see +TLSC). 0 disables TLS<br />
 <br />
 Valid range is 0 to 4<br />
 </p>
@@ -5812,7 +6455,7 @@ Valid range is 0 to 4<br />
 <td style="text-align: left;"><p>&lt;READ_THRESHOLD&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Subscription read threshold<br />
+<td style="text-align: left;"><p>Largest received message size (in bytes) delivered inline, larger messages are buffered. Default is 128<br />
 <br />
 Unsigned 16-bit value<br />
 </p></td>
@@ -5838,9 +6481,11 @@ Unsigned 16-bit value<br />
 
 This command is used to connect to an MQTT broker.
 
+When issued without parameters, the current connection state is reported asynchronously using the [+MQTTCONN](#AN_AEC_AT_MQTT_MQTTCONN) AEC, rather than as a command response.
+
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -5923,7 +6568,7 @@ This command is used to subscribe to an MQTT topic.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -5969,6 +6614,8 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>String<br />
 </p></td>
 <td style="text-align: left;"><p>Topic Name<br />
+<br />
+Valid range is 0 to 128<br />
 </p></td>
 </tr>
 <tr>
@@ -6010,7 +6657,7 @@ This command is used to list MQTT topic subscriptions.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -6100,7 +6747,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 
 ##### Description
 
-This command is used receive data from subscriptions.
+This command is used to receive data from subscriptions.
 
 The [+MQTTSUBRD](#AN_CMD_AT_MQTT_MQTTSUBRD) command is used in conjunction with the setting of [READ_THRESHOLD](#AN_CMD_MQTTC_STORE_ID_READ_THRESHOLD).
 
@@ -6108,12 +6755,18 @@ When a message is received the DCE will emit a [+MQTTSUBRX](#AN_AEC_AT_MQTT_MQTT
 
 Setting [READ_THRESHOLD](#AN_CMD_MQTTC_STORE_ID_READ_THRESHOLD) to zero will cause all received messages to be buffered for reading using this command.
 
+Buffered messages are read in the order they were received; only the oldest buffered message for the topic can be read, and requesting a different message ID returns an error.
+
+A message may be read in several parts. If \<LENGTH\> is less than the remaining message data, only that many bytes are returned, and the next read of the same message ID continues from that point. The message is released once all of its data has been read. If no message is buffered for the topic, no data is returned.
+
+The length element of the response is the number of bytes returned by this read.
+
 > [!NOTE]
 > The message ID is only relevant for QoS1 and QoS2 subscriptions.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -6159,6 +6812,8 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>String<br />
 </p></td>
 <td style="text-align: left;"><p>Topic Name<br />
+<br />
+Valid range is 0 to 128<br />
 </p></td>
 </tr>
 <tr>
@@ -6182,9 +6837,9 @@ Unsigned 16-bit value<br />
 </tbody>
 </table>
 
-| Response | Description |
-|----|----|
-| +MQTTSUBRD:\<MSG_ID\>,\<MSG_LENGTH\>,\<TOPIC_PAYLOAD\> | Read subscribed data |
+| Response                                    | Description          |
+|---------------------------------------------|----------------------|
+| +MQTTSUBRD:\<MSG_LENGTH\>,\<TOPIC_PAYLOAD\> | Read subscribed data |
 
 **Response Syntax**
 
@@ -6203,13 +6858,6 @@ Unsigned 16-bit value<br />
 </tr>
 </thead>
 <tbody>
-<tr>
-<td style="text-align: left;"><p>&lt;MSG_ID&gt;</p></td>
-<td style="text-align: left;"><p>Integer<br />
-</p></td>
-<td style="text-align: left;"><p>Message ID<br />
-</p></td>
-</tr>
 <tr>
 <td style="text-align: left;"><p>&lt;MSG_LENGTH&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
@@ -6236,7 +6884,7 @@ This command is used to unsubscribe from an MQTT topic.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -6282,21 +6930,24 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>String<br />
 </p></td>
 <td style="text-align: left;"><p>Topic Name<br />
+<br />
+Valid range is 0 to 128<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
 ---
+<a id="AN_CMD_AT_MQTT_MQTTPUB"></a>
 #### +MQTTPUB
 
 ##### Description
 
-This command is used to publish a message.
+Publish a message (single or fragmented).
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -6314,8 +6965,20 @@ Default [security](#_security_model) for the command is: `GGGG`
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>AT+MQTTPUB=&lt;DUP&gt;,&lt;QOS&gt;,&lt;RETAIN&gt;,&lt;TOPIC_NAME_ID&gt;,&lt;TOPIC_PAYLOAD&gt;</p></td>
-<td style="text-align: left;"><p>Publish to a topic<br />
+<td style="text-align: left;"><p>AT+MQTTPUB=&lt;FRAG&gt;,&lt;QOS&gt;,&lt;RETAIN&gt;,&lt;TOPIC_NAME_ID&gt;,&lt;TOPIC_PAYLOAD&gt;</p></td>
+<td style="text-align: left;"><p>Publish complete or first fragment<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>AT+MQTTPUB=&lt;FRAG&gt;,&lt;COMP&gt;,&lt;TOPIC_PAYLOAD&gt;</p></td>
+<td style="text-align: left;"><p>Publish continuation fragment<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>AT+MQTTPUB</p></td>
+<td style="text-align: left;"><p>Query fragment state<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
@@ -6338,30 +7001,16 @@ Default [security](#_security_model) for the command is: `GGGG`
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>&lt;DUP&gt;</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_AT_MQTT_MQTTPUB_FRAG"></span>&lt;FRAG&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Duplicate Message<br />
-</p>
-<table>
-<colgroup>
-<col style="width: 14%" />
-<col style="width: 85%" />
-</colgroup>
-<tbody>
-<tr>
-<td style="text-align: left;"><p>0</p></td>
-<td style="text-align: left;"><p>New message.</p></td>
+<td style="text-align: left;"><p>Fragment Number (0=complete, 1=first, 2+=continuation)<br />
+<br />
+Valid range is 0 to 64<br />
+</p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>1</p></td>
-<td style="text-align: left;"><p>Duplicate message.</p></td>
-</tr>
-</tbody>
-</table></td>
-</tr>
-<tr>
-<td style="text-align: left;"><p>&lt;QOS&gt;</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_AT_MQTT_MQTTPUB_QOS"></span>&lt;QOS&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
 <td style="text-align: left;"><p>QoS<br />
@@ -6388,7 +7037,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>&lt;RETAIN&gt;</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_AT_MQTT_MQTTPUB_RETAIN"></span>&lt;RETAIN&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
 <td style="text-align: left;"><p>Retain Message<br />
@@ -6411,7 +7060,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>&lt;TOPIC_NAME_ID&gt;</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_AT_MQTT_MQTTPUB_TOPIC_NAME_ID"></span>&lt;TOPIC_NAME_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 String<br />
 Byte Array<br />
@@ -6422,17 +7071,42 @@ Byte Array<br />
 <tr>
 <td style="text-align: left;"><p>&lt;TOPIC_PAYLOAD&gt;</p></td>
 <td style="text-align: left;"><p>String<br />
+Byte Array<br />
 </p></td>
 <td style="text-align: left;"><p>Topic Payload<br />
 </p></td>
 </tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_AT_MQTT_MQTTPUB_COMP"></span>&lt;COMP&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Completion Flag<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>More fragments follow.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>Final fragment, publish now.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
 </tbody>
 </table>
 
-| Response               | Description         |
-|------------------------|---------------------|
-| +MQTTPUB               | Publish (QoS 0)     |
+| Response | Description |
+|----|----|
 | +MQTTPUB:\<PACKET_ID\> | Publish (QoS 1 & 2) |
+| +MQTTPUB:\<FRAG\>,\<TOTAL_LEN\> | Fragment accumulation feedback |
+| +MQTTPUB:\<FRAG\>,\<TOTAL_LEN\>,\<TOPIC_NAME\> | Fragment state query |
 
 **Response Syntax**
 
@@ -6458,6 +7132,27 @@ Byte Array<br />
 <td style="text-align: left;"><p>Packet ID<br />
 </p></td>
 </tr>
+<tr>
+<td style="text-align: left;"><p>&lt;FRAG&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Next expected fragment number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;TOTAL_LEN&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Total accumulated bytes<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;TOPIC_NAME&gt;</p></td>
+<td style="text-align: left;"><p>String<br />
+</p></td>
+<td style="text-align: left;"><p>Topic Name<br />
+</p></td>
+</tr>
 </tbody>
 </table>
 
@@ -6470,7 +7165,7 @@ This command is used to define a last will message.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -6489,7 +7184,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <tbody>
 <tr>
 <td style="text-align: left;"><p>AT+MQTTLWT=&lt;QOS&gt;,&lt;RETAIN&gt;,&lt;TOPIC_NAME&gt;,&lt;TOPIC_PAYLOAD&gt;</p></td>
-<td style="text-align: left;"><p>Specific an LWT<br />
+<td style="text-align: left;"><p>Specify an LWT<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
@@ -6566,11 +7261,14 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>String<br />
 </p></td>
 <td style="text-align: left;"><p>Topic Name<br />
+<br />
+Valid range is 0 to 128<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>&lt;TOPIC_PAYLOAD&gt;</p></td>
 <td style="text-align: left;"><p>String<br />
+Byte Array<br />
 </p></td>
 <td style="text-align: left;"><p>Topic Payload<br />
 </p></td>
@@ -6587,7 +7285,7 @@ This command is used to disconnect from a broker.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -6712,6 +7410,7 @@ Unsigned 8-bit value<br />
 </table>
 
 ---
+<a id="AN_CMD_AT_MQTT_MQTTPROPTX"></a>
 #### +MQTTPROPTX
 
 ##### Description
@@ -6722,6 +7421,8 @@ This command is a configuration command which supports setting and getting param
 
 Any defined and selected properties are added to transmitted MQTT packets. Only properties applicable to the MQTT packet type are added. Properties must be selected via the [+MQTTPROPTXS](#AN_CMD_AT_MQTT_MQTTPROPTXS) command before they are included.
 
+Property names and identifiers are as defined in the MQTT Version 5.0 specification (OASIS), section 2.2.2.2.
+
 > [!NOTE]
 > Not all properties listed below may be available in any implementation of this command set.
 
@@ -6729,7 +7430,7 @@ User property (38) supports multiple entries in the form of key/value pairs. If 
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -7083,6 +7784,7 @@ with an ID range 38.0 to 38.9<br />
 </table>
 
 ---
+<a id="AN_CMD_AT_MQTT_MQTTPROPRX"></a>
 #### +MQTTPROPRX
 
 ##### Description
@@ -7093,6 +7795,8 @@ This command is a configuration command which supports setting and getting param
 
 Any defined properties are added to transmitted MQTT packets. Only properties applicable to the MQTT packet type are added.
 
+Property names and identifiers are as defined in the MQTT Version 5.0 specification (OASIS), section 2.2.2.2.
+
 Any properties received are added to the list of available receive properties which can be queried by this command. Updates to the received properties are announced using the [+MQTTPROPRX](#AN_AEC_AT_MQTT_MQTTPROPRX) AEC and can be read via this command.
 
 > [!NOTE]
@@ -7102,7 +7806,7 @@ User property (38) supports multiple entries in the form of key/value pairs.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -7514,7 +8218,7 @@ This command is used to define which transmit properties are selected.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -7932,7 +8636,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>Use another server.</p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>156</p></td>
+<td style="text-align: left;"><p>157</p></td>
 <td style="text-align: left;"><p>Server moved.</p></td>
 </tr>
 <tr>
@@ -7946,6 +8650,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_MQTT_MQTTPUBACK"></a>
 #### +MQTTPUBACK
 
 ##### Description
@@ -7984,6 +8689,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_MQTT_MQTTPUBCOMP"></a>
 #### +MQTTPUBCOMP
 
 ##### Description
@@ -8022,6 +8728,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_MQTT_MQTTPUBERR"></a>
 #### +MQTTPUBERR
 
 ##### Description
@@ -8424,6 +9131,104 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_MQTT_MQTTPUBSENT"></a>
+#### +MQTTPUBSENT
+
+##### Description
+
+**Publish sent (QoS 0).**
+
+| AEC          | Description          |
+|--------------|----------------------|
+| +MQTTPUBSENT | Publish sent (QoS 0) |
+
+AEC Syntax
+
+---
+<a id="AN_AEC_AT_MQTT_MQTTSUBRXERR"></a>
+#### +MQTTSUBRXERR
+
+##### Description
+
+**Received subscribed data was dropped.**
+
+| AEC | Description |
+|----|----|
+| +MQTTSUBRXERR:\<REASON\>,\<TOPIC_NAME\>,\<MSG_ID\>,\<MSG_LENGTH\> | Received message dropped |
+
+**AEC Syntax**
+
+<table>
+<caption>AEC Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;REASON&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Reason the received message was dropped<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>Message exceeds the maximum packet size.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>2</p></td>
+<td style="text-align: left;"><p>Insufficient memory to buffer the message.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>3</p></td>
+<td style="text-align: left;"><p>No matching subscription.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>4</p></td>
+<td style="text-align: left;"><p>Message length inconsistent with buffer.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;TOPIC_NAME&gt;</p></td>
+<td style="text-align: left;"><p>String<br />
+</p></td>
+<td style="text-align: left;"><p>Topic Name<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MSG_ID&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Message ID<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MSG_LENGTH&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Length of message<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+---
 ### Examples:
 
 MQTT connection directly over TLS
@@ -8448,7 +9253,7 @@ MQTT connection directly over TLS
 </tr>
 <tr>
 <td>→</td>
-<td><strong>AT<a href="#AN_CMD_AT_TLS_TLSC">+TLSC</a>=1,6,"example.com"</strong></td>
+<td><strong>AT<a href="#AN_CMD_AT_TLS_TLSC">+TLSC</a>=1,6,"mqtt.example.com"</strong></td>
 <td>Set the broker domain</td>
 </tr>
 <tr>
@@ -8586,7 +9391,7 @@ MQTT connection over TLS socket
 </tr>
 <tr>
 <td>→</td>
-<td><strong>AT<a href="#AN_CMD_AT_TLS_TLSC">+TLSC</a>=1,6,"example.com"</strong></td>
+<td><strong>AT<a href="#AN_CMD_AT_TLS_TLSC">+TLSC</a>=1,6,"mqtt.example.com"</strong></td>
 <td>Set the broker domain</td>
 </tr>
 <tr>
@@ -8817,8 +9622,13 @@ Subscribe to MQTT topic and receive data (polled)
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_CMD_AT_MQTT_MQTTSUBRD">+MQTTSUBRD</a>:11,"ExampleText1"</strong></td>
+<td><strong><a href="#AN_CMD_AT_MQTT_MQTTSUBRD">+MQTTSUBRD</a>:12,"ExampleText1"</strong></td>
 <td>Message ID=1 data</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
 </tr>
 <tr>
 <td>→</td>
@@ -8827,8 +9637,13 @@ Subscribe to MQTT topic and receive data (polled)
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_CMD_AT_MQTT_MQTTSUBRD">+MQTTSUBRD</a>:11,"ExampleText2"</strong></td>
+<td><strong><a href="#AN_CMD_AT_MQTT_MQTTSUBRD">+MQTTSUBRD</a>:12,"ExampleText2"</strong></td>
 <td>Message ID=2 data</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
 </tr>
 </tbody>
 </table>
@@ -8837,6 +9652,29 @@ Subscribe to MQTT topic and receive data (polled)
 <a id="AN_MOD_NETIF"></a>
 ## NETIF (Module ID = 9)
 
+### Introduction
+
+The NETIF module configures and reports the settings of the network interfaces. Two interface configurations are provided, with indices 0 and 1. The [WSTA](#AN_MOD_WSTA), [WAP](#AN_MOD_WAP) and [DHCP](#AN_MOD_DHCP) modules each select the interface they use with their NETIF_IDX setting, which defaults to 0. [+NETIFC](#AN_CMD_AT_NETIF_NETIFC) with no parameters reports the range of valid indices.
+
+An interface’s configuration can only be written while the interface is down, except [L2_MONITOR_MODE](#AN_CMD_NETIFC_STORE_ID_L2_MONITOR_MODE) and [L2_MONITOR_MAX_LEN](#AN_CMD_NETIFC_STORE_ID_L2_MONITOR_MAX_LEN). Where an address has both a configured and a live value, the configured value is reported while the interface is down and the live value while it is up.
+
+#### IPv4
+
+The DHCP client ([DHCPC_EN](#AN_CMD_NETIFC_STORE_ID_DHCPC_EN)) is enabled by default and applies when the interface is used by the station. If DHCP is disabled and no static address is configured, a link-local (ZeroConf) address is used.
+
+#### IPv6
+
+Stateless address autoconfiguration ([IPV6_SLAAC](#AN_CMD_NETIFC_STORE_ID_IPV6_SLAAC)) is enabled by default. The link-local address, global addresses and the gateway learned from router advertisements are reported once the interface is up.
+
+#### Layer 2 Access
+
+If [L2_ONLY](#AN_CMD_NETIFC_STORE_ID_L2_ONLY) is set the interface is brought up without the TCP/IP stack.
+
+[L2_MONITOR_MODE](#AN_CMD_NETIFC_STORE_ID_L2_MONITOR_MODE) selects which received frames (unicast, broadcast, multicast) are reported by the [+NETIFRX](#AN_AEC_AT_NETIF_NETIFRX) AEC, optionally truncated to [L2_MONITOR_MAX_LEN](#AN_CMD_NETIFC_STORE_ID_L2_MONITOR_MAX_LEN) bytes. Monitored frames are still passed to the TCP/IP stack.
+
+[+NETIFTX](#AN_CMD_AT_NETIF_NETIFTX) transmits a complete Ethernet frame, including its header, of up to 1596 bytes. The interface must be up.
+
+---
 ### Command Reference:
 
 <a id="AN_CMD_AT_NETIF_NETIFC"></a>
@@ -8850,7 +9688,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -8939,10 +9777,10 @@ Byte Array<br />
 </tbody>
 </table>
 
-| Response                  | Description   |
-|---------------------------|---------------|
-| +NETIFC:\<INTF\>,\<INTF\> | List response |
-| +NETIFC:\<ID\>,\<VAL\>    | Read response |
+| Response                        | Description       |
+|---------------------------------|-------------------|
+| +NETIFC:\<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| +NETIFC:\<ID\>,\<VAL\>          | Read response     |
 
 **Response Syntax**
 
@@ -8962,12 +9800,17 @@ Byte Array<br />
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>&lt;INTF&gt;</p></td>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Interface number<br />
-<br />
-Valid range is 0 to 1<br />
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
 </p></td>
 </tr>
 <tr>
@@ -9050,13 +9893,13 @@ Maximum length of string is 16<br />
 <td style="text-align: left;"><p>&lt;HOSTNAME&gt;</p></td>
 <td style="text-align: left;"><p>String<br />
 </p></td>
-<td style="text-align: left;"><p>Name of this interface<br />
+<td style="text-align: left;"><p>Host name of this interface (NetBIOS name), up to 16 characters<br />
 Maximum length of string is 16<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>10</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_NETIFC_STORE_ID_DHCPC_EN"></span> 10</p></td>
 <td style="text-align: left;"><p>&lt;DHCPC_EN&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
@@ -9111,7 +9954,7 @@ Format of IPv4 address is 'a.b.c.d'<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>20</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_NETIFC_STORE_ID_L2_ONLY"></span> 20</p></td>
 <td style="text-align: left;"><p>&lt;L2_ONLY&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
@@ -9136,7 +9979,7 @@ Format of IPv4 address is 'a.b.c.d'<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>21</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_NETIFC_STORE_ID_L2_MONITOR_MODE"></span> 21</p></td>
 <td style="text-align: left;"><p>&lt;L2_MONITOR_MODE&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
@@ -9185,16 +10028,16 @@ Format of IPv4 address is 'a.b.c.d'<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>22</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_NETIFC_STORE_ID_L2_MONITOR_MAX_LEN"></span> 22</p></td>
 <td style="text-align: left;"><p>&lt;L2_MONITOR_MAX_LEN&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
-<td style="text-align: left;"><p>L2 monitor max length<br />
+<td style="text-align: left;"><p>Maximum number of bytes of each frame reported in NETIFRX AECs, 0 for the whole frame<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>40</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_NETIFC_STORE_ID_IP_MASK"></span> 40</p></td>
 <td style="text-align: left;"><p>&lt;IP_MASK&gt;</p></td>
 <td style="text-align: left;"><p>IPv4 Address<br />
 </p></td>
@@ -9204,7 +10047,7 @@ Format of IPv4 address is 'a.b.c.d/m'<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>41</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_NETIFC_STORE_ID_GATEWAY"></span> 41</p></td>
 <td style="text-align: left;"><p>&lt;GATEWAY&gt;</p></td>
 <td style="text-align: left;"><p>IPv4 Address<br />
 </p></td>
@@ -9245,10 +10088,36 @@ Format of IPv6 address is 'a:b:c:d::e:f'<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_NETIFC_STORE_ID_IPV6_SLAAC"></span> 63</p></td>
+<td style="text-align: left;"><p>&lt;IPV6_SLAAC&gt;</p></td>
+<td style="text-align: left;"><p>Bool<br />
+</p></td>
+<td style="text-align: left;"><p>IPv6 SLAAC enable<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>Disabled - use static address only.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>Enabled - allow autoconfiguration (default).</p></td>
+</tr>
+</tbody>
+</table></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
 </tbody>
 </table>
 
 ---
+<a id="AN_CMD_AT_NETIF_NETIFTX"></a>
 #### +NETIFTX
 
 ##### Description
@@ -9257,7 +10126,7 @@ This command is used to send L2 data frames.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -9320,6 +10189,7 @@ Valid range is 0 to 1<br />
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_NETIF_NETIFRX"></a>
 #### +NETIFRX
 
 ##### Description
@@ -9388,17 +10258,116 @@ After a successful OTA, activation and reboot, the alternate firmware image part
 > [!NOTE]
 > If the OTA feature is not being utilised, the alternate firmware image partition on the DCE can be used for data storage. The partition supports up to 960kB of data. Data can be erased, written, read and checked via the NVM commands.
 
+#### OTA Sequence
+
+Each of [+OTADL](#AN_CMD_AT_OTA_OTADL), [+OTAVFY](#AN_CMD_AT_OTA_OTAVFY), [+OTAACT](#AN_CMD_AT_OTA_OTAACT) and [+OTAINV](#AN_CMD_AT_OTA_OTAINV) returns a new operation ID in its response, and every [+OTA](#AN_AEC_AT_OTA_OTA) and [+OTAERR](#AN_AEC_AT_OTA_OTAERR) AEC which follows carries that ID. Only one OTA operation can run at a time; a new operation is refused until the previous one has completed.
+
+##### Download
+
+[+OTADL](#AN_CMD_AT_OTA_OTADL)=1 downloads the image from the server configured with [+OTAC](#AN_CMD_AT_OTA_OTAC) into the alternate partition. It is refused if:
+
+- [+OTAINV](#AN_CMD_AT_OTA_OTAINV) has been used since the last reset: [NVM_LOCKED](#AN_STATUS_NVM_LOCKED);
+
+- the STA is not connected: [OTA_NO_STA_CONN](#AN_STATUS_OTA_NO_STA_CONN);
+
+- a download is already running, [HOST](#AN_CMD_OTAC_STORE_ID_HOST) is not set, or the HTTP client is in use by the [HTTP](#AN_MOD_HTTP) module.
+
+On success the [+OTA](#AN_AEC_AT_OTA_OTA) AEC reports, in order:
+
+1.  Erase Done (10.0): the whole alternate partition has been erased.
+
+2.  Write Done (10.1): the whole image has been received and written.
+
+3.  Verify Done (10.2): the image signature has been verified.
+
+The downloaded image is latent: it does not run until it is activated. A download cannot be cancelled.
+
+##### Verify and Activate
+
+[+OTAVFY](#AN_CMD_AT_OTA_OTAVFY) verifies the image in the alternate partition, reported by the [+OTA](#AN_AEC_AT_OTA_OTA) AEC with Verify Done (10.2). It is only needed for the NVM method; a download is verified automatically.
+
+[+OTAACT](#AN_CMD_AT_OTA_OTAACT) verifies the image again and then activates it, reported with Activate Done (10.3). The current image continues to run; the activated image runs from the next reset.
+
+If the image fails verification, [+OTAVFY](#AN_CMD_AT_OTA_OTAVFY) and [+OTAACT](#AN_CMD_AT_OTA_OTAACT) fail with [OTA_VERIFY_FAILED](#AN_STATUS_OTA_VERIFY_FAILED) and no AEC is sent. [+OTAACT](#AN_CMD_AT_OTA_OTAACT) fails with an error if the image has already been activated.
+
+> [!NOTE]
+> A download started after [+OTAACT](#AN_CMD_AT_OTA_OTAACT) and before the next reset erases the activated image.
+
+##### Rollback
+
+[+OTAINV](#AN_CMD_AT_OTA_OTAINV) verifies the image in the alternate partition, which must be bootable: the previous (rollback) image, or an image activated since the last reset, but not a latent image. It then invalidates the current image, reported with Invalidate Done (10.4), and the alternate image runs from the next reset.
+
+After [+OTAINV](#AN_CMD_AT_OTA_OTAINV), [+NVMER](#AN_CMD_AT_NVM_NVMER), [+NVMWR](#AN_CMD_AT_NVM_NVMWR) and [+OTADL](#AN_CMD_AT_OTA_OTADL) fail with [NVM_LOCKED](#AN_STATUS_NVM_LOCKED) until the next reset.
+
+##### After an Error
+
+When the [+OTAERR](#AN_AEC_AT_OTA_OTAERR) AEC is sent the download stops, and the alternate partition is left partly erased or written. Correct the cause and start the download again; the partition is erased again first. For the NVM method, erase and rewrite the partition.
+
+- [OTA_ERROR](#AN_STATUS_OTA_ERROR): an erase or flash write failed, or the connection closed before the whole image was received. The server must send a Content-Length header.
+
+- [OTA_PROTOCOL_ERROR](#AN_STATUS_OTA_PROTOCOL_ERROR): the server returned an HTTP status other than 200, which is included in the AEC (see [Error Handling](#AN_NOTE_OTA_ERRORS)), or a DNS, connection or request error occurred.
+
+- [OTA_TLS_ERROR](#AN_STATUS_OTA_TLS_ERROR): the TLS session could not be created or the handshake failed, see [TLS](#AN_MOD_TLS).
+
+- [OTA_IMG_TOO_LARGE](#AN_STATUS_OTA_IMG_TOO_LARGE): the image is larger than the partition.
+
+- [OTA_TIMEOUT](#AN_STATUS_OTA_TIMEOUT): no progress was made within the timeout, see [Timeout](#AN_NOTE_OTA_TIMEOUT). Loss of the STA link, or the server closing the connection, during the download is also reported as a timeout.
+
+- [OTA_VERIFY_FAILED](#AN_STATUS_OTA_VERIFY_FAILED): the downloaded image failed verification.
+
+##### After Reset
+
+The [+BOOT](#AN_AEC_AT_CMD_APP_BOOT) AEC reports the version of the running firmware. [+DI](#AN_CMD_AT_DI_DI) lists the image in each partition; after a successful update the new image is CURRENT and the previous image is ROLLBACK. The RNWF02 does not roll back automatically; use [+OTAINV](#AN_CMD_AT_OTA_OTAINV) to return to the previous image.
+
+---
+<a id="AN_NOTE_OTA_TIMEOUT"></a>
 #### Timeout
 
-A timeout is set for the internal OTA, if a data packet is not received within *n* seconds or *n* second gap occurs between packets, then the OTA process will be stopped. The default timeout is 20 seconds.
+The internal OTA download has a timeout set by [TIMEOUT](#AN_CMD_OTAC_STORE_ID_TIMEOUT), 20 seconds by default. The download is stopped with [OTA_TIMEOUT](#AN_STATUS_OTA_TIMEOUT) if no progress is made within the timeout. The timer starts once the partition has been erased, and covers the DNS lookup, the connection, the TLS handshake and each gap between received packets. If the server sends a Keep-Alive header with a timeout, that value is used instead.
 
 > [!NOTE]
 > It may be necessary to use a timeout greater than the default if the network conditions are poor, or the server has a high latency.
+
+<a id="AN_NOTE_OTA_ERRORS"></a>
+#### Error Handling
+
+The OTA module reports errors via the [+OTAERR](#AN_AEC_AT_OTA_OTAERR) asynchronous event. For protocol-specific errors (such as HTTP status codes indicating authentication failures, missing resources, or server errors), the extended error format includes the protocol type and the protocol-specific error code:
+
+`+OTAERR:\<OTA_OP_ID\>,\<ERROR_CODE\>,\<PROTOCOL\>,\<PROTOCOL_STATUS\>`
+
+For example, if the OTA server returns HTTP 401 (Unauthorized), the error will be reported as:
+
+`+OTAERR:1,10.7,"Protocol Error",1,401`
+
+Where:
+
+- `1` is the operation ID
+
+- `10.7` indicates Protocol Error
+
+- `1` indicates the HTTP protocol
+
+- `401` is the HTTP status code
+
+Common HTTP status codes that may be reported:
+
+- `401` - Unauthorized (authentication required)
+
+- `403` - Forbidden (access denied)
+
+- `404` - Not Found (firmware file does not exist)
+
+- `500` - Internal Server Error
+
+- `503` - Service Unavailable
+
+Errors detected when an OTA command is issued, such as OTA_NO_STA_CONN, or a failed verification by [+OTAVFY](#AN_CMD_AT_OTA_OTAVFY), [+OTAACT](#AN_CMD_AT_OTA_OTAACT) or [+OTAINV](#AN_CMD_AT_OTA_OTAINV), are returned as the command’s status rather than by an AEC.
 
 #### Troubleshooting
 
 Further firmware image information can be gathered with the [+DI](#AN_CMD_AT_DI_DI) command which can help with debugging available images on the DCE.
 
+---
 #### Internal HTTP/S OTA Example
 
 For OTA using the internal HTTP/HTTPS download based method, a HTTP server is required to serve the firmware image file. The DTE configures the download, then downloads and activates the new image. Image verification is done internally when the download completes.
@@ -9439,8 +10408,8 @@ For OTA using the internal HTTP/HTTPS download based method, a HTTP server is re
 </tr>
 <tr>
 <td>→</td>
-<td><strong>AT<a href="#AN_CMD_AT_OTA_OTAC">+OTAC</a>=5,"rnwf02_ota.bootable.bin"</strong></td>
-<td>Set filename</td>
+<td><strong>AT<a href="#AN_CMD_AT_OTA_OTAC">+OTAC</a>=5,"rnwf02_ota.bin"</strong></td>
+<td>Set filename of the released OTA image</td>
 </tr>
 <tr>
 <td>←</td>
@@ -9491,7 +10460,7 @@ For OTA using the internal HTTP/HTTPS download based method, a HTTP server is re
 <tr>
 <td>←</td>
 <td><strong><a href="#AN_AEC_AT_OTA_OTA">+OTA</a>:1,10.0,"Erase Done"</strong></td>
-<td>Partiton erased AEC</td>
+<td>Partition erased AEC</td>
 </tr>
 <tr>
 <td>←</td>
@@ -9526,6 +10495,7 @@ For OTA using the internal HTTP/HTTPS download based method, a HTTP server is re
 </tbody>
 </table>
 
+---
 #### NVM OTA Example
 
 For OTA using the host controlled flash write based method, the DTE accesses the alternate firmware image partition of the DCE with flash read/write/erase commands. This feature allows extra flexibility with the data transport method, and ability to implement more advanced OTA logic if required - such as piecemeal updating with persistence between power cycles.
@@ -9534,6 +10504,21 @@ Once the DTE has written the image to the DCE using [NVM (Module ID = 29)](#AN_M
 
 <table>
 <tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_NVM_NVMER">+NVMER</a>=0,240</strong></td>
+<td>Erase the alternate partition (240 sectors)</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_CMD_AT_NVM_NVMER">+NVMER</a></strong></td>
+<td>Erase complete AEC</td>
+</tr>
 <tr>
 <td>→</td>
 <td><strong>AT<a href="#AN_CMD_AT_NVM_NVMWR">+NVMWR</a>=0,512,\[FFFFFFFF0101E0005048434D0300000000000300FFFFFFFF…​\]</strong></td>
@@ -9616,7 +10601,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -9690,6 +10675,43 @@ Byte Array<br />
 </tbody>
 </table>
 
+| Response             | Description   |
+|----------------------|---------------|
+| +OTAC:\<ID\>,\<VAL\> | Read response |
+
+**Response Syntax**
+
+<table>
+<caption>Response Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Any</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
 <table>
 <caption>Configuration Parameters</caption>
 <colgroup>
@@ -9752,7 +10774,7 @@ Byte Array<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>2</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_OTAC_STORE_ID_HOST"></span> 2</p></td>
 <td style="text-align: left;"><p>&lt;HOST&gt;</p></td>
 <td style="text-align: left;"><p>String<br />
 IPv4 Address<br />
@@ -9770,7 +10792,7 @@ Format of IPv6 address is 'a:b:c:d::e:f'<br />
 <td style="text-align: left;"><p>&lt;PORT&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Listening port<br />
+<td style="text-align: left;"><p>Server port (e.g. 80 for HTTP, 443 for HTTPS); must be set<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
@@ -9795,7 +10817,7 @@ Maximum length of string is 1024<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>6</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_OTAC_STORE_ID_TIMEOUT"></span> 6</p></td>
 <td style="text-align: left;"><p>&lt;TIMEOUT&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
@@ -9806,11 +10828,11 @@ Positive unsigned 8-bit value<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_OTAC_STORE_ID_TLS_CONF"></span> 7</p></td>
 <td style="text-align: left;"><p>&lt;TLS_CONF&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>TLS configuration index (see +TLSC)<br />
+<td style="text-align: left;"><p>TLS configuration index (see +TLSC). 0 disables TLS<br />
 <br />
 Valid range is 0 to 4<br />
 </p></td>
@@ -9838,7 +10860,7 @@ This command allows the downloading of firmware to the DCE.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -9944,7 +10966,7 @@ This command verifies the OTA firmware image.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -10013,7 +11035,7 @@ This command activates the OTA firmware image.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -10082,7 +11104,7 @@ This command will invalidate the current running firmware image. Invalidation do
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -10185,46 +11207,47 @@ Positive unsigned 8-bit value<br />
 <td style="text-align: left;"><p>&lt;OTA_STATE&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Status code<br />
-</p>
+<td style="text-align: left;"><p>OTA status code<br />
+One of the OTA module status codes:</p>
 <table>
 <colgroup>
-<col style="width: 14%" />
-<col style="width: 85%" />
+<col style="width: 100%" />
 </colgroup>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>0</p></td>
-<td style="text-align: left;"><p>Erase done.</p></td>
+<td style="text-align: left;"><p><a href="#AN_STATUS_ERASE_DONE">ERASE_DONE</a></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>1</p></td>
-<td style="text-align: left;"><p>Write done.</p></td>
+<td style="text-align: left;"><p><a href="#AN_STATUS_WRITE_DONE">WRITE_DONE</a></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>2</p></td>
-<td style="text-align: left;"><p>Verify done.</p></td>
+<td style="text-align: left;"><p><a href="#AN_STATUS_VERIFY_DONE">VERIFY_DONE</a></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>3</p></td>
-<td style="text-align: left;"><p>Activate done.</p></td>
+<td style="text-align: left;"><p><a href="#AN_STATUS_ACTIVATE_DONE">ACTIVATE_DONE</a></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><a href="#AN_STATUS_INVALIDATE_DONE">INVALIDATE_DONE</a></p></td>
 </tr>
 </tbody>
-</table></td>
+</table>
+<p>See <a href="#_status_response_codes">Status Response Codes</a>.</p></td>
 </tr>
 </tbody>
 </table>
 
 ---
+<a id="AN_AEC_AT_OTA_OTAERR"></a>
 #### +OTAERR
 
 ##### Description
 
 **OTA error.**
 
-| AEC                                  | Description |
-|--------------------------------------|-------------|
-| +OTAERR:\<OTA_OP_ID\>,\<ERROR_CODE\> | OTA error   |
+| AEC | Description |
+|----|----|
+| +OTAERR:\<OTA_OP_ID\>,\<ERROR_CODE\> | OTA error |
+| +OTAERR:\<OTA_OP_ID\>,\<ERROR_CODE\>,\<PROTOCOL\>,\<PROTOCOL_STATUS\> | OTA protocol status |
 
 **AEC Syntax**
 
@@ -10259,6 +11282,33 @@ Positive unsigned 8-bit value<br />
 <td style="text-align: left;"><p>Error code<br />
 </p>
 <p>See <a href="#_status_response_codes">Status Response Codes</a></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;PROTOCOL&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Protocol type<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>HTTP protocol.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;PROTOCOL_STATUS&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Protocol-specific status code<br />
+</p>
+<p>For HTTP protocol this is the server response code, valid range is 100 to 599</p></td>
 </tr>
 </tbody>
 </table>
@@ -10303,8 +11353,8 @@ Internal OTA HTTP Configuration
 </tr>
 <tr>
 <td>→</td>
-<td><strong>AT<a href="#AN_CMD_AT_OTA_OTAC">+OTAC</a>=5,"rnwf02_ota.bootable.bin"</strong></td>
-<td>Set filename</td>
+<td><strong>AT<a href="#AN_CMD_AT_OTA_OTAC">+OTAC</a>=5,"rnwf02_ota.bin"</strong></td>
+<td>Set filename of the released OTA image</td>
 </tr>
 <tr>
 <td>←</td>
@@ -10355,7 +11405,7 @@ Internal OTA
 <tr>
 <td>←</td>
 <td><strong><a href="#AN_AEC_AT_OTA_OTA">+OTA</a>:1,10.0,"Erase Done"</strong></td>
-<td>Partiton erased AEC</td>
+<td>Partition erased AEC</td>
 </tr>
 <tr>
 <td>←</td>
@@ -10395,6 +11445,21 @@ NVM OTA
 
 <table>
 <tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_NVM_NVMER">+NVMER</a>=0,240</strong></td>
+<td>Erase the alternate partition (240 sectors)</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_CMD_AT_NVM_NVMER">+NVMER</a></strong></td>
+<td>Erase complete AEC</td>
+</tr>
 <tr>
 <td>→</td>
 <td><strong>AT<a href="#AN_CMD_AT_NVM_NVMWR">+NVMWR</a>=0,512,\[FFFFFFFF0101E0005048434D0300000000000300FFFFFFFF…​\]</strong></td>
@@ -10467,8 +11532,18 @@ NVM OTA
 <a id="AN_MOD_PING"></a>
 ## PING (Module ID = 11)
 
+### Introduction
+
+The PING module sends a single ICMP echo request to a remote host and reports the round trip time.
+
+The target may be an IPv4 or IPv6 address, or a host name which is first resolved using DNS. The [+PING](#AN_CMD_AT_PING_PING) command completes once the request has been sent; the result is reported later by the [+PING](#AN_AEC_AT_PING_PING) AEC, which carries the address and round trip time, or by the [+PINGERR](#AN_AEC_AT_PING_PINGERR) AEC if no reply is received within one second.
+
+More than one request may be outstanding at a time.
+
+---
 ### Command Reference:
 
+<a id="AN_CMD_AT_PING_PING"></a>
 #### +PING
 
 ##### Description
@@ -10477,7 +11552,7 @@ This command sends a ping (ICMP Echo Request) to the target address.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -10562,6 +11637,7 @@ Byte Array<br />
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_PING_PING"></a>
 #### +PING
 
 ##### Description
@@ -10607,6 +11683,7 @@ Byte Array<br />
 </table>
 
 ---
+<a id="AN_AEC_AT_PING_PINGERR"></a>
 #### +PINGERR
 
 ##### Description
@@ -10648,8 +11725,16 @@ Byte Array<br />
 ---
 ## RST (Module ID = 12)
 
+### Introduction
+
+The [+RST](#AN_CMD_AT_RST_RST) command performs a full software reset of the RNWF02. The OK response is sent before the reset takes place.
+
+All runtime state and configuration is lost, including network connections, the system time and scan results. After the reset the configuration is restored from the configuration archive file "autoexec" if one has been stored, see [CFG](#AN_MOD_CFG).
+
+---
 ### Command Reference:
 
+<a id="AN_CMD_AT_RST_RST"></a>
 #### +RST
 
 ##### Description
@@ -10658,7 +11743,7 @@ This command is used to reset the DCE.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -10689,8 +11774,26 @@ Default [security](#_security_model) for the command is: `GGGG`
 <a id="AN_MOD_SNTP"></a>
 ## SNTP (Module ID = 13)
 
+### Introduction
+
+The SNTP module configures the NTP client which sets the system time. The client is enabled by default.
+
+The source of the NTP server is selected by [NTP_STATIC](#AN_CMD_SNTPC_STORE_ID_NTP_STATIC):
+
+- AUTO: the NTP server supplied by the DHCP server is used. If none is supplied the client does not start.
+
+- MANUAL: the server configured by [NTP_SVR](#AN_CMD_SNTPC_STORE_ID_NTP_SVR) is used, this may be a host name or an IPv4 or IPv6 address.
+
+The client starts when the station interface obtains an IP address. Changes made to [+SNTPC](#AN_CMD_AT_SNTP_SNTPC) while connected are applied immediately.
+
+Each successful synchronisation sets the system time and sends a [+TIME](#AN_AEC_AT_TIME_TIME) AEC. Server timeouts and protocol errors are reported by the [+SNTPERR](#AN_AEC_AT_SNTP_SNTPERR) AEC.
+
+While the station is connected and the client is enabled, reading [NTP_SVR](#AN_CMD_SNTPC_STORE_ID_NTP_SVR) returns the address of the server in use rather than the configured value.
+
+---
 ### Command Reference:
 
+<a id="AN_CMD_AT_SNTP_SNTPC"></a>
 #### +SNTPC
 
 ##### Description
@@ -10701,7 +11804,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -10878,7 +11981,7 @@ Byte Array<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>2</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_SNTPC_STORE_ID_NTP_STATIC"></span> 2</p></td>
 <td style="text-align: left;"><p>&lt;NTP_STATIC&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
@@ -10903,7 +12006,7 @@ Byte Array<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>3</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_SNTPC_STORE_ID_NTP_SVR"></span> 3</p></td>
 <td style="text-align: left;"><p>&lt;NTP_SVR&gt;</p></td>
 <td style="text-align: left;"><p>String<br />
 IPv4 Address<br />
@@ -10922,6 +12025,7 @@ Format of IPv6 address is 'a:b:c:d::e:f'<br />
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_SNTP_SNTPERR"></a>
 #### +SNTPERR
 
 ##### Description
@@ -10966,6 +12070,93 @@ Format of IPv6 address is 'a:b:c:d::e:f'<br />
 
 ### Introduction:
 
+#### Socket Lifecycle
+
+##### Opening
+
+[+SOCKO](#AN_CMD_AT_SOCKET_SOCKO) opens a UDP or TCP socket and returns its socket ID. The IP version (4 or 6) is optional; if it is not given IPv4 is used when the socket is bound. Socket IDs are allocated sequentially and are not reused until the 16-bit ID wraps.
+
+A network connection is not needed to open a socket, but a TCP connection needs a local IP address. Up to 30 sockets can be open at once, after which [+SOCKO](#AN_CMD_AT_SOCKET_SOCKO) fails with [NO_FREE_SOCKETS](#AN_STATUS_NO_FREE_SOCKETS). The TCP/IP stack provides 10 TCP and 10 UDP sockets, which are shared with the MQTT and HTTP modules.
+
+##### TCP Client
+
+1.  [+SOCKBR](#AN_CMD_AT_SOCKET_SOCKBR) connects the socket to a remote IP address or host name. The OK response indicates the connection has started.
+
+2.  The [+SOCKIND](#AN_AEC_AT_SOCKET_SOCKIND) AEC reports that the connection is established, with the local and remote addresses and ports.
+
+If the connection is not established within 10 seconds, including when it is refused by the remote host, the [+SOCKERR](#AN_AEC_AT_SOCKET_SOCKERR) AEC reports Socket Bind Failed. If the host name cannot be resolved, [+SOCKERR](#AN_AEC_AT_SOCKET_SOCKERR) reports the DNS error. The socket ID remains allocated in both cases and must be closed with [+SOCKCL](#AN_CMD_AT_SOCKET_SOCKCL).
+
+##### TCP Server
+
+1.  [+SOCKBL](#AN_CMD_AT_SOCKET_SOCKBL) listens on a local port. [PEND_SKTS](#AN_CMD_AT_SOCKET_SOCKBL_PEND_SKTS) (default 1) sets the number of connections which can be open at once; each one reserves a TCP stack socket when [+SOCKBL](#AN_CMD_AT_SOCKET_SOCKBL) is issued.
+
+2.  Each accepted connection is given a new socket ID, reported by the [+SOCKIND](#AN_AEC_AT_SOCKET_SOCKIND) AEC. The new socket inherits the listening socket’s [+SOCKC](#AN_CMD_AT_SOCKET_SOCKC) and TLS settings. Data is read and written using the new socket ID.
+
+Closing an accepted socket frees its connection slot for the next connection. Closing the listening socket stops new connections; sockets which are already connected stay open.
+
+See example [Opening a TCP server socket](#EXAMPLE_SOCKO_1).
+
+---
+##### UDP
+
+- [+SOCKBL](#AN_CMD_AT_SOCKET_SOCKBL) binds the socket to a local port, and datagrams from any remote host are received.
+
+- [+SOCKBR](#AN_CMD_AT_SOCKET_SOCKBR) sets the default destination used by [+SOCKWR](#AN_CMD_AT_SOCKET_SOCKWR).
+
+- [+SOCKWRTO](#AN_CMD_AT_SOCKET_SOCKWRTO) sends to the given address. It binds the socket if needed, and sets the default destination if none is set.
+
+- [+SOCKBM](#AN_CMD_AT_SOCKET_SOCKBM) joins a multicast group.
+
+##### TLS
+
+[+SOCKTLS](#AN_CMD_AT_SOCKET_SOCKTLS) applies a TLS configuration (1 to 4, see [+TLSC](#AN_CMD_AT_TLS_TLSC)) to a TCP socket:
+
+- if it is issued before [+SOCKBR](#AN_CMD_AT_SOCKET_SOCKBR) or [+SOCKBL](#AN_CMD_AT_SOCKET_SOCKBL), the handshake starts once the connection is established;
+
+- if it is issued on a connected socket, the connection is upgraded to TLS.
+
+The [+SOCKTLS](#AN_AEC_AT_SOCKET_SOCKTLS) AEC reports that the handshake has completed; data cannot be written until then. On a server, each accepted socket performs its own handshake and reports [+SOCKTLS](#AN_AEC_AT_SOCKET_SOCKTLS) with its own socket ID. If the handshake fails, the [+SOCKERR](#AN_AEC_AT_SOCKET_SOCKERR) AEC reports Socket TLS Failed.
+
+##### Writing
+
+- [+SOCKWR](#AN_CMD_AT_SOCKET_SOCKWR) writes to a TCP socket, or to a UDP socket with a default destination, up to 1460 bytes.
+
+- [+SOCKWRTO](#AN_CMD_AT_SOCKET_SOCKWRTO) writes to a UDP socket, up to 1472 bytes.
+
+- If there is not enough transmit buffer space the command fails with [SOCKET_NOT_READY](#AN_STATUS_SOCKET_NOT_READY); retry later.
+
+The optional SEQ_NUM parameter ([SEQ_NUM](#AN_CMD_AT_SOCKET_SOCKWR_SEQ_NUM), [SEQ_NUM](#AN_CMD_AT_SOCKET_SOCKWRTO_SEQ_NUM)) detects lost or repeated writes:
+
+- the first write which includes it sets the expected sequence number;
+
+- every later ASCII or hex write must include the expected sequence number, which advances by the number of bytes written, otherwise it fails with [SOCKET_SEQUENCE_ERROR](#AN_STATUS_SOCKET_SEQUENCE_ERROR).
+
+In binary mode the data is sent as raw binary after the '#' prompt, see [Raw Binary - From DTE to DCE](#AN_OVERVIEW_RAW_BINARY_DTE_DCE). The DCE waits for the data with no timeout; send the +++ escape sequence to end the transfer early.
+
+---
+##### Reading
+
+Received data is announced by the [+SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) (TCP) or [+SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) (UDP) AEC. The four methods of reading it are described in [Reading Socket Data](#AN_NOTE_SOCK_READ):
+
+| Method | Enabled by | Data delivered by | Flow control | UDP datagram larger than read |
+|----|----|----|----|----|
+| Basic | Default | [+SOCKRD](#AN_CMD_AT_SOCKET_SOCKRD) OUTPUT_MODE 1 or 2 | The DTE reads when ready | The rest of the datagram is discarded |
+| In-band | [+SOCKRD](#AN_CMD_AT_SOCKET_SOCKRD) OUTPUT_MODE 3 | [+SOCKRD](#AN_CMD_AT_SOCKET_SOCKRD), with the pending data information in the response | The DTE reads when ready; no AECs until all data is read | The rest of the datagram is discarded |
+| Simple asynchronous | [ASYNC_MAX_FRM_SZ](#AN_CMD_SOCKC_STORE_ID_ASYNC_MAX_FRM_SZ) | [+SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT)/[+SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) with the data | None, data is sent as it arrives | The rest of the datagram is lost |
+| Acknowledged asynchronous | [ASYNC_MAX_FRM_SZ](#AN_CMD_SOCKC_STORE_ID_ASYNC_MAX_FRM_SZ) and [ASYNC_WIN_SZ](#AN_CMD_SOCKC_STORE_ID_ASYNC_WIN_SZ) | [+SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT)/[+SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) with the data and a sequence number | Window advanced by [ASYNC_NEXT_SN](#AN_CMD_SOCKC_STORE_ID_ASYNC_NEXT_SN) | The rest of the datagram is lost |
+
+[+SOCKRDBUF](#AN_CMD_AT_SOCKET_SOCKRDBUF) reads part of a UDP datagram without discarding the rest, see example [Reading partial datagram](#EXAMPLE_SOCKRDBUF).
+
+##### Closing
+
+[+SOCKCL](#AN_CMD_AT_SOCKET_SOCKCL) closes a socket and releases its socket ID.
+
+The [+SOCKCL](#AN_AEC_AT_SOCKET_SOCKCL) AEC reports that a connected TCP socket was closed by the remote host or timed out. It is not sent when the DTE closes the socket with [+SOCKCL](#AN_CMD_AT_SOCKET_SOCKCL). The socket ID remains allocated until [+SOCKCL](#AN_CMD_AT_SOCKET_SOCKCL) is issued. After the remote host closes the connection, data which has not been read can still be read; after a reset it is lost.
+
+When the network interface goes down, for example on [+WSTALD](#AN_AEC_AT_WSTA_WSTALD) or [+WSTA](#AN_CMD_AT_WSTA_WSTA)=0, sockets are not closed and no AEC is sent. The DTE should close them with [+SOCKCL](#AN_CMD_AT_SOCKET_SOCKCL).
+
+---
+<a id="AN_NOTE_SOCK_READ"></a>
 #### Reading Socket Data
 
 There are four methods of reading data from a socket, two polled and two asynchronous methods. Polling involves the [+SOCKRD](#AN_CMD_AT_SOCKET_SOCKRD) command and [+SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT)/[+SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AECs. Asynchronous methods involve the [+SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT)/[+SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AECs.
@@ -11052,7 +12243,8 @@ As with the basic [+SOCKRD](#AN_CMD_AT_SOCKET_SOCKRD) method, [+SOCKRXT](#AN_AEC
 </tbody>
 </table>
 
-##### Simple Asynchorous method:
+---
+##### Simple Asynchronous method:
 
 By configuring the [+SOCKC](#AN_CMD_AT_SOCKET_SOCKC) [ASYNC_MAX_FRM_SZ](#AN_CMD_SOCKC_STORE_ID_ASYNC_MAX_FRM_SZ) parameter of a socket the DTE can set the maximum frame size of data to be received asynchronously from the DCE.
 
@@ -11088,11 +12280,12 @@ When the [ASYNC_MAX_FRM_SZ](#AN_CMD_SOCKC_STORE_ID_ASYNC_MAX_FRM_SZ) parameter i
 </tbody>
 </table>
 
+---
 ##### Acknowledged Asynchronous method:
 
 Extending the simple asynchronous method, if the [ASYNC_WIN_SZ](#AN_CMD_SOCKC_STORE_ID_ASYNC_WIN_SZ) parameter of a socket is also set the DCE will use a sliding window protocol to send data to the DTE. In addition to the data included in the [+SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) or [+SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AEC a sequence number is added, this represents the sequence number of the first byte of the data provided.
 
-The DCE will continue to send data via AEC until [ASYNC_WIN_SZ](#AN_CMD_SOCKC_STORE_ID_ASYNC_WIN_SZ) bytes have been transmitted, after which transmission will cease. To resume transmission the DTE must update the value of [+SOCKC](#AN_CMD_AT_SOCKET_SOCKC) parameter [ASYNC_NEXT_SN](#AN_CMD_SOCKC_STORE_ID_ASYNC_NEXT_SN) to acknowledge reception of data from the DCE, once this value has been updated the DCE will continue to send more data until [ASYNC_NEXT_SN](#AN_CMD_SOCKC_STORE_ID_ASYNC_NEXT_SN) + [ASYNC_WIN_SZ](#AN_CMD_SOCKC_STORE_ID_ASYNC_WIN_SZ) bytes have been received.
+The DCE will continue to send data via AEC until [ASYNC_WIN_SZ](#AN_CMD_SOCKC_STORE_ID_ASYNC_WIN_SZ) bytes have been transmitted, after which transmission will cease. To resume transmission the DTE must update the value of [+SOCKC](#AN_CMD_AT_SOCKET_SOCKC) parameter [ASYNC_NEXT_SN](#AN_CMD_SOCKC_STORE_ID_ASYNC_NEXT_SN) to acknowledge reception of data from the DCE, once this value has been updated the DCE will continue to send more data until [ASYNC_NEXT_SN](#AN_CMD_SOCKC_STORE_ID_ASYNC_NEXT_SN) + [ASYNC_WIN_SZ](#AN_CMD_SOCKC_STORE_ID_ASYNC_WIN_SZ) bytes have been sent.
 
 The DTE does not need to wait until transmission has ceased before updating [ASYNC_NEXT_SN](#AN_CMD_SOCKC_STORE_ID_ASYNC_NEXT_SN), this can be done at any time and will ensure the transmission window remains open for subsequent [+SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) or [+SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AECs.
 
@@ -11160,7 +12353,16 @@ Using this method the DTE can ensure that buffer space is available for receivin
 </tbody>
 </table>
 
----
+##### Socket Errors
+
+Errors which occur after a command has completed are reported by the [+SOCKERR](#AN_AEC_AT_SOCKET_SOCKERR) AEC. The error code identifies the cause:
+
+- Socket Bind Failed: a TCP connection was not established within 10 seconds of binding to the remote address, or the bind itself failed.
+
+- Socket TLS Failed: the TLS handshake failed or could not be started.
+
+- A DNS error code: the remote host name could not be resolved.
+
 ### Command Reference:
 
 <a id="AN_CMD_AT_SOCKET_SOCKO"></a>
@@ -11172,7 +12374,7 @@ This command is used to open a new socket.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -11293,7 +12495,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11311,7 +12513,7 @@ This command is used to bind a socket to a local port.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -11362,7 +12564,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11377,10 +12579,10 @@ Positive unsigned 16-bit value<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>&lt;PEND_SKTS&gt;</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_AT_SOCKET_SOCKBL_PEND_SKTS"></span>&lt;PEND_SKTS&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Number of pending sockets connections<br />
+<td style="text-align: left;"><p>Maximum number of simultaneous connections, limited by the number of free TCP sockets<br />
 <br />
 Valid range is 1 to 10<br />
 </p></td>
@@ -11398,7 +12600,7 @@ This command is used to bind a socket to a remote address.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -11443,7 +12645,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11471,6 +12673,7 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_CMD_AT_SOCKET_SOCKBM"></a>
 #### +SOCKBM
 
 ##### Description
@@ -11479,7 +12682,7 @@ This command is used to bind a socket to a multicast group.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -11524,7 +12727,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11561,7 +12764,7 @@ This command is used to enable TLS on a socket.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -11606,7 +12809,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11615,9 +12818,9 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;TLS_CONF&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>TLS certificate configuration<br />
+<td style="text-align: left;"><p>TLS configuration index (see +TLSC)<br />
 <br />
-Valid range is 0 to 4<br />
+Valid range is 1 to 4<br />
 </p></td>
 </tr>
 </tbody>
@@ -11625,7 +12828,7 @@ Valid range is 0 to 4<br />
 
 | Response             | Description |
 |----------------------|-------------|
-| +SOCKTLS:\<SOCK_ID\> | TLS succeed |
+| +SOCKTLS:\<SOCK_ID\> | TLS success |
 
 **Response Syntax**
 
@@ -11648,7 +12851,7 @@ Valid range is 0 to 4<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11668,7 +12871,7 @@ If no [DATA](#AN_CMD_AT_SOCKET_SOCKWR_DATA) parameter is supplied to the [+SOCKW
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -11725,7 +12928,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11740,13 +12943,13 @@ Valid range is 0 to 1460<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>&lt;SEQ_NUM&gt;</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_AT_SOCKET_SOCKWR_SEQ_NUM"></span>&lt;SEQ_NUM&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Sequence number of first byte<br />
+<td style="text-align: left;"><p>Sequence number of first byte. Once used, required on every subsequent ASCII or hex write<br />
 <br />
 Unsigned 16-bit value<br />
-</p></td>
+The first write that includes a sequence number sets the starting sequence number for the socket. After that, every write on the socket must include the sequence number, equal to the previous sequence number plus the previous data length (modulo 65536), otherwise the write fails with Socket Sequence Error. Sockets on which a sequence number has never been used are not affected.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p><span id="AN_CMD_AT_SOCKET_SOCKWR_DATA"></span>&lt;DATA&gt;</p></td>
@@ -11772,7 +12975,7 @@ If no [DATA](#AN_CMD_AT_SOCKET_SOCKWRTO_DATA) parameter is supplied to the [+SOC
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -11829,7 +13032,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11863,13 +13066,13 @@ Valid range is 0 to 1472<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>&lt;SEQ_NUM&gt;</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_AT_SOCKET_SOCKWRTO_SEQ_NUM"></span>&lt;SEQ_NUM&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Sequence number of first byte<br />
+<td style="text-align: left;"><p>Sequence number of first byte. Once used, required on every subsequent ASCII or hex write<br />
 <br />
 Unsigned 16-bit value<br />
-</p></td>
+The first write that includes a sequence number sets the starting sequence number for the socket. After that, every write on the socket must include the sequence number, equal to the previous sequence number plus the previous data length (modulo 65536), otherwise the write fails with Socket Sequence Error. Sockets on which a sequence number has never been used are not affected.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p><span id="AN_CMD_AT_SOCKET_SOCKWRTO_DATA"></span>&lt;DATA&gt;</p></td>
@@ -11903,9 +13106,19 @@ For TCP sockets the DCE will indicate, via [+SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT)
 
 For UDP sockets the DCE will indicate, via [+SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU), the number of bytes of data which were received in the oldest datagram received by the DCE. Only a single [+SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) will be issued by the DCE even if subsequent UDP datagrams are received. Reading data from the UDP socket via the [+SOCKRD](#AN_CMD_AT_SOCKET_SOCKRD) command will read and discard the current datagram, if less data is requested than was indicated by the [+SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AEC the remaining unread data in the datagram will be discarded.
 
+**Output Modes**
+
+- **1**: the data is returned in the response as a string or hexadecimal string, see [Strings](#AN_OVERVIEW_STRINGS).
+
+- **2**: the DCE leaves terminal mode and sends the data as raw binary, see [Raw Binary - From DCE to DTE](#AN_OVERVIEW_RAW_BINARY_DCE_DTE). A \<LENGTH\> of 0 continues sending data until the escape sequence is received.
+
+- **3**: as mode 1, with the remaining pending data (and for UDP, the number of pending datagrams and the sender’s address and port) included in the response. No further receive AECs are sent until the pending data has been read.
+
+The \<LENGTH\> is limited to the amount of data available. For TCP sockets a \<LENGTH\> of 0 returns no data; for UDP sockets it reads a zero-length datagram.
+
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -11950,7 +13163,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11959,7 +13172,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;OUTPUT_MODE&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The format the DTE wishes to receive the data<br />
+<td style="text-align: left;"><p>Output format of the data<br />
 </p>
 <table>
 <colgroup>
@@ -11969,15 +13182,15 @@ Positive unsigned 16-bit value<br />
 <tbody>
 <tr>
 <td style="text-align: left;"><p>1</p></td>
-<td style="text-align: left;"><p>ASCII or hex string.</p></td>
+<td style="text-align: left;"><p>Data returned in the response.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>2</p></td>
-<td style="text-align: left;"><p>Binary.</p></td>
+<td style="text-align: left;"><p>Raw binary (AT interface only).</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>3</p></td>
-<td style="text-align: left;"><p>ASCII or hex string with extended information.</p></td>
+<td style="text-align: left;"><p>Data returned in the response, with pending data information.</p></td>
 </tr>
 </tbody>
 </table></td>
@@ -11986,7 +13199,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;LENGTH&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The number of bytes the DTE wishes to read<br />
+<td style="text-align: left;"><p>Maximum number of bytes to read<br />
 </p></td>
 </tr>
 </tbody>
@@ -12019,7 +13232,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -12084,7 +13297,7 @@ This command is used to read data from a socket buffer (UDP only).
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -12129,7 +13342,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -12138,7 +13351,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;OUTPUT_MODE&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The format the DTE wishes to receive the data<br />
+<td style="text-align: left;"><p>Output format of the data<br />
 </p>
 <table>
 <colgroup>
@@ -12148,15 +13361,15 @@ Positive unsigned 16-bit value<br />
 <tbody>
 <tr>
 <td style="text-align: left;"><p>1</p></td>
-<td style="text-align: left;"><p>ASCII or hex string.</p></td>
+<td style="text-align: left;"><p>Data returned in the response.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>2</p></td>
-<td style="text-align: left;"><p>Binary.</p></td>
+<td style="text-align: left;"><p>Raw binary (AT interface only).</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>3</p></td>
-<td style="text-align: left;"><p>ASCII or hex string with extended information.</p></td>
+<td style="text-align: left;"><p>Data returned in the response, with pending data information.</p></td>
 </tr>
 </tbody>
 </table></td>
@@ -12165,7 +13378,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;LENGTH&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The number of bytes the DTE wishes to read<br />
+<td style="text-align: left;"><p>Maximum number of bytes to read<br />
 </p></td>
 </tr>
 </tbody>
@@ -12174,7 +13387,6 @@ Positive unsigned 16-bit value<br />
 | Response | Description |
 |----|----|
 | +SOCKRDBUF:\<SOCK_ID\>,\<LENGTH\>,\<DATA\> | Socket read response |
-| +SOCKRDBUF:\<SOCK_ID\>,\<LENGTH\>,\<PEND_DATA\>,\<DATA\> | Socket read response (TCP extended) |
 | +SOCKRDBUF:\<SOCK_ID\>,\<LENGTH\>,\<PEND_DATA\>,\<PEND_DATAGRAM\>,\<RMT_ADDR\>,\<RMT_PORT\>,\<DATA\> | Socket read response (UDP extended) |
 
 **Response Syntax**
@@ -12198,7 +13410,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -12254,6 +13466,7 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_CMD_AT_SOCKET_SOCKCL"></a>
 #### +SOCKCL
 
 ##### Description
@@ -12262,7 +13475,7 @@ This command is used to close a socket.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -12307,7 +13520,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -12340,7 +13553,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -12357,7 +13570,7 @@ This command is used to present a list of the DCE’s open sockets/connections.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -12408,7 +13621,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -12441,7 +13654,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -12512,7 +13725,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -12575,7 +13788,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -12601,9 +13814,10 @@ Byte Array<br />
 </tbody>
 </table>
 
-| Response              | Description   |
-|-----------------------|---------------|
-| +SOCKC:\<ID\>,\<VAL\> | Read response |
+| Response                       | Description       |
+|--------------------------------|-------------------|
+| +SOCKC:\<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| +SOCKC:\<ID\>,\<VAL\>          | Read response     |
 
 **Response Syntax**
 
@@ -12622,6 +13836,20 @@ Byte Array<br />
 </tr>
 </thead>
 <tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
+</p></td>
+</tr>
 <tr>
 <td style="text-align: left;"><p>&lt;ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
@@ -12712,7 +13940,7 @@ Byte Array<br />
 <td style="text-align: left;"><p>&lt;SO_KEEPALIVE&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Socket keep alive timeout (TCP)<br />
+<td style="text-align: left;"><p>Socket keep alive timeout in milliseconds (TCP), 0 disables<br />
 <br />
 Unsigned 16-bit value<br />
 </p></td>
@@ -12778,8 +14006,8 @@ Valid range is 1460 to 32768<br />
 <td style="text-align: left;"><p>&lt;ASYNC_NEXT_SN&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Async next sequence number<br />
-</p></td>
+<td style="text-align: left;"><p>Async next sequence number (acknowledgement)<br />
+See <a href="#AN_NOTE_SOCK_READ">Reading Socket Data</a>.</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
@@ -12787,8 +14015,8 @@ Valid range is 1460 to 32768<br />
 <td style="text-align: left;"><p>&lt;ASYNC_WIN_SZ&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Async window size<br />
-</p></td>
+<td style="text-align: left;"><p>Async window size in bytes, 0 for no window. Default is 0<br />
+See <a href="#AN_NOTE_SOCK_READ">Reading Socket Data</a>.</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
@@ -12796,8 +14024,8 @@ Valid range is 1460 to 32768<br />
 <td style="text-align: left;"><p>&lt;ASYNC_MAX_FRM_SZ&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Async maximum frame size<br />
-</p></td>
+<td style="text-align: left;"><p>Async maximum frame size in bytes, 0 disables async delivery. Default is 0<br />
+See <a href="#AN_NOTE_SOCK_READ">Reading Socket Data</a>.</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 </tbody>
@@ -12838,7 +14066,7 @@ Valid range is 1460 to 32768<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -12919,7 +14147,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -12992,7 +14220,7 @@ Unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -13057,6 +14285,7 @@ Unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_AEC_AT_SOCKET_SOCKCL"></a>
 #### +SOCKCL
 
 ##### Description
@@ -13088,7 +14317,7 @@ Unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -13106,7 +14335,7 @@ Positive unsigned 16-bit value<br />
 
 | AEC                  | Description |
 |----------------------|-------------|
-| +SOCKTLS:\<SOCK_ID\> | TLS succeed |
+| +SOCKTLS:\<SOCK_ID\> | TLS success |
 
 **AEC Syntax**
 
@@ -13129,7 +14358,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -13138,15 +14367,16 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_AEC_AT_SOCKET_SOCKERR"></a>
 #### +SOCKERR
 
 ##### Description
 
 **Socket error.**
 
-| AEC                                 | Description     |
-|-------------------------------------|-----------------|
-| +SOCKERR:\<SOCK_ID\>,\<ERROR_CODE\> | TCP bind failed |
+| AEC                                 | Description                  |
+|-------------------------------------|------------------------------|
+| +SOCKERR:\<SOCK_ID\>,\<ERROR_CODE\> | Socket error, see error code |
 
 **AEC Syntax**
 
@@ -13169,7 +14399,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -13401,7 +14631,7 @@ Set TLS configuration 1 for TLS client
 <tr>
 <td>→</td>
 <td><strong>AT<a href="#AN_CMD_AT_TLS_TLSC">+TLSC</a>=1,41,1</strong></td>
-<td>Enable server domain verification</td>
+<td>Enable server domain verification (enabled by default)</td>
 </tr>
 <tr>
 <td>←</td>
@@ -13421,7 +14651,7 @@ Set TLS configuration 1 for TLS client
 <tr>
 <td>→</td>
 <td><strong>AT<a href="#AN_CMD_AT_TLS_TLSC">+TLSC</a>=1,40,1</strong></td>
-<td>Enable server authentication</td>
+<td>Enable server authentication (enabled by default)</td>
 </tr>
 <tr>
 <td>←</td>
@@ -13461,8 +14691,8 @@ Set TLS configuration 1 for TLS client
 </tbody>
 </table>
 
-Open a TLS client socket with AT+SOCK
-<a id="EXAMPLE_12de0326b22680d3b9cc3d612dba34e5f4d023fe"></a>
+Open a TLS client socket
+<a id="EXAMPLE_b727ea9918f20ca000a04c56d63af4f37dafd8a6"></a>
 
 <table>
 <tbody>
@@ -13473,13 +14703,13 @@ Open a TLS client socket with AT+SOCK
 </tr>
 <tr>
 <td>←</td>
-<td><code>OK</code></td>
-<td></td>
+<td><strong><a href="#AN_CMD_AT_SOCKET_SOCKO">+SOCKO</a>:17603</strong></td>
+<td>Socket created</td>
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_CMD_AT_SOCKET_SOCKO">+SOCKO</a>:17603</strong></td>
-<td>Socket created</td>
+<td><code>OK</code></td>
+<td></td>
 </tr>
 <tr>
 <td>→</td>
@@ -13546,7 +14776,7 @@ Set TLS configuration 2 for TLS server
 </tr>
 <tr>
 <td>←</td>
-<td><code>0K</code></td>
+<td><code>OK</code></td>
 <td></td>
 </tr>
 <tr>
@@ -13572,8 +14802,8 @@ Set TLS configuration 2 for TLS server
 </tbody>
 </table>
 
-Open a TLS server socket with AT+SOCK
-<a id="EXAMPLE_a70e12e9f2deb08dda4c674bca8584fd9c59e257"></a>
+Open a TLS server socket
+<a id="EXAMPLE_2768fe54a6516136aa956658c21d99e275b3d9d0"></a>
 
 <table>
 <tbody>
@@ -13584,13 +14814,13 @@ Open a TLS server socket with AT+SOCK
 </tr>
 <tr>
 <td>←</td>
-<td><code>OK</code></td>
-<td></td>
+<td><strong><a href="#AN_CMD_AT_SOCKET_SOCKO">+SOCKO</a>:16037</strong></td>
+<td>Socket created</td>
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_CMD_AT_SOCKET_SOCKO">+SOCKO</a>:16037</strong></td>
-<td>Socket created</td>
+<td><code>OK</code></td>
+<td></td>
 </tr>
 <tr>
 <td>→</td>
@@ -13614,13 +14844,13 @@ Open a TLS server socket with AT+SOCK
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_AEC_AT_SOCKET_SOCKIND">+SOCKIND</a>:16037,"1.2.3.4",443,"11.22.33.44",12345</strong></td>
-<td>New socket connection on port 443</td>
+<td><strong><a href="#AN_AEC_AT_SOCKET_SOCKIND">+SOCKIND</a>:16038,"1.2.3.4",443,"11.22.33.44",12345</strong></td>
+<td>New socket 16038 connected on port 443</td>
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_AEC_AT_SOCKET_SOCKTLS">+SOCKTLS</a>:16037</strong></td>
-<td>Socket upgraded to TLS</td>
+<td><strong><a href="#AN_AEC_AT_SOCKET_SOCKTLS">+SOCKTLS</a>:16038</strong></td>
+<td>Socket 16038 upgraded to TLS</td>
 </tr>
 </tbody>
 </table>
@@ -13667,17 +14897,22 @@ Reading partial datagram
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_CMD_AT_SOCKET_SOCKRDBUF">+SOCKRDBUF</a>=7,10,\[11223344556677889900\]</strong></td>
+<td><strong><a href="#AN_CMD_AT_SOCKET_SOCKRDBUF">+SOCKRDBUF</a>:7,10,\[11223344556677889900\]</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
 <td></td>
 </tr>
 <tr>
 <td>→</td>
 <td><strong>AT<a href="#AN_CMD_AT_SOCKET_SOCKRDBUF">+SOCKRDBUF</a>=7,1,10</strong></td>
-<td>Read second 10 bytes of datagram</td>
+<td>Read next 10 bytes of the same datagram</td>
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_CMD_AT_SOCKET_SOCKRDBUF">+SOCKRDBUF</a>=7,10,\[AABBCCDDEEFF11223344\]</strong></td>
+<td><strong><a href="#AN_CMD_AT_SOCKET_SOCKRDBUF">+SOCKRDBUF</a>:7,10,\[AABBCCDDEEFF11223344\]</strong></td>
 <td></td>
 </tr>
 <tr>
@@ -13688,11 +14923,11 @@ Reading partial datagram
 <tr>
 <td>→</td>
 <td><strong>AT<a href="#AN_CMD_AT_SOCKET_SOCKRD">+SOCKRD</a>=7,1,10</strong></td>
-<td>Read first 10 bytes of next datagram and discard remaining (and buffered)</td>
+<td>Discard rest of current datagram, read first 10 bytes of next datagram</td>
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_CMD_AT_SOCKET_SOCKRDBUF">+SOCKRDBUF</a>=7,10,\[1234567890ABCDEF0011\]</strong></td>
+<td><strong><a href="#AN_CMD_AT_SOCKET_SOCKRD">+SOCKRD</a>:7,10,\[1234567890ABCDEF0011\]</strong></td>
 <td></td>
 </tr>
 <tr>
@@ -13707,6 +14942,21 @@ Reading partial datagram
 <a id="AN_MOD_TIME"></a>
 ## TIME (Module ID = 16)
 
+### Introduction
+
+The TIME module sets and reads the system time. Three formats are supported:
+
+- UNIX: seconds since 1970-01-01.
+
+- NTP: seconds since 1900-01-01.
+
+- RFC3339: a string of the form YYYY-MM-DDTHH:MM:SS.00Z.
+
+A query with [+TIME](#AN_CMD_AT_TIME_TIME) reports the time in a [+TIME](#AN_AEC_AT_TIME_TIME) AEC followed by the OK response. Specifying a format in the query also sets the format used for all later time values reported on the interface, including those in [+TIME](#AN_AEC_AT_TIME_TIME) AECs sent by the SNTP client. The default format is NTP.
+
+Until the time is set it counts from 1970-01-01 at boot. When the SNTP client is enabled, each synchronisation overwrites a manually set time. The time is not retained across a reset.
+
+---
 ### Command Reference:
 
 <a id="AN_CMD_AT_TIME_TIME"></a>
@@ -13724,17 +14974,19 @@ Three formats of time are supported, two are in UTC seconds and one is a string 
 
 3.  RFC3339 / ISO-8601 - String representation of date/time
 
-RFC3338 / ISO-8601 format represents the time as:
+RFC3339 / ISO-8601 format represents the time as:
 
-    YYYY-MM-DDTHH:MM:SS.ssZ
+    YYYY-MM-DDTHH:MM:SS.00Z
+
+The two fractional-second digits must be present but are ignored; times are reported with ".00".
 
 For example:
 
-    2019-02-28T12:34:56.01Z - 28th February 2019, 12:34 PM 56.01 seconds (UTC+0)
+    2019-02-28T12:34:56.00Z - 28th February 2019, 12:34 PM 56 seconds (UTC+0)
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -13892,11 +15144,89 @@ Byte Array<br />
 
 Transport Layer Security (TLS) establishes an encrypted communication channel between a client and server, ensuring confidentiality and integrity of exchanged data.
 
-The RNWF02 can establish a TLS session in either client mode or server mode. The TLS configuration parameters described in this module are used in conjunction with the [SOCK](#AN_MOD_SOCKET), [MQTT](#AN_MOD_MQTT), and [WSTA](#AN_MOD_WSTA) modules to enable secure connections.
+The RNWF02 can establish a TLS session in either client mode or server mode. The TLS configuration parameters described in this module are used in conjunction with the [SOCK](#AN_MOD_SOCKET), [MQTT](#AN_MOD_MQTT), [HTTP](#AN_MOD_HTTP), [OTA](#AN_MOD_OTA), [DNS](#AN_MOD_DNS) and [WSTA](#AN_MOD_WSTA) modules to enable secure connections.
 
+#### Quick Start: TLS Client
+
+1.  Load the CA certificate which signed the server’s certificate using the [FS](#AN_MOD_FS) module, with file type 1 (certificate). The certificate may be in PEM or DER format; a PEM file may contain several certificates. File names are limited to 32 characters. The file system supplied with the RNWF02 includes a set of root CA certificates, list them with [+FS](#AN_CMD_AT_FS_FLFS_FS)=2,1.
+
+2.  Make sure the system time is valid. Certificates are checked against the system time, which counts from 1970-01-01 until it is set, so the CA certificate fails date validation until the time is set. Wait for the [+TIME](#AN_AEC_AT_TIME_TIME) AEC from the [SNTP](#AN_MOD_SNTP) client, or set the time with [+TIME](#AN_CMD_AT_TIME_TIME). By default the SNTP client only uses an NTP server supplied by DHCP; set [NTP_STATIC](#AN_CMD_SNTPC_STORE_ID_NTP_STATIC) and [NTP_SVR](#AN_CMD_SNTPC_STORE_ID_NTP_SVR) to use a specific server.
+
+3.  Configure one of the four TLS configurations with [+TLSC](#AN_CMD_AT_TLS_TLSC):
+
+    - [CA_CERT_NAME](#AN_CMD_TLSC_STORE_ID_CA_CERT_NAME): the CA certificate file name, with or without its extension. The file must already be loaded.
+
+    - [DOMAIN_NAME](#AN_CMD_TLSC_STORE_ID_DOMAIN_NAME): the server’s domain name, used for domain name verification. It is not taken from the host name used to connect.
+
+    - [SERVER_NAME](#AN_CMD_TLSC_STORE_ID_SERVER_NAME): the name sent in the Server Name Indication extension. It is not set automatically; many cloud services require it.
+
+    - [CERT_NAME](#AN_CMD_TLSC_STORE_ID_CERT_NAME) and [PRI_KEY_NAME](#AN_CMD_TLSC_STORE_ID_PRI_KEY_NAME): only needed if the server authenticates the client.
+
+4.  Use the configuration with [+SOCKTLS](#AN_CMD_AT_SOCKET_SOCKTLS), or with the TLS configuration element of [MQTTC](#AN_CMD_MQTTC_STORE_ID_TLS_CONF), [HTTPC](#AN_CMD_HTTPC_STORE_ID_TLS_CONF), [OTAC](#AN_CMD_OTAC_STORE_ID_TLS_CONF), [DNSC](#AN_CMD_DNSC_STORE_ID_TLS_CONF) or [WSTAC](#AN_CMD_WSTAC_STORE_ID_ENT_CRED_TLS_CONF).
+
+See example [Basic TLS client configuration](#EXAMPLE_SOCKTLSCLI).
+
+Only TLS 1.2 is supported. A TLS configuration cannot be changed while it is in use; [+TLSC](#AN_CMD_AT_TLS_TLSC) fails with [STORE_UPDATE_BLOCKED](#AN_STATUS_STORE_UPDATE_BLOCKED).
+
+---
+##### Server Mode
+
+A new TLS configuration has peer authentication and domain name verification enabled, in server mode as well as client mode. A server which does not authenticate its clients must disable both with [PEER_AUTH](#AN_CMD_TLSC_STORE_ID_PEER_AUTH) and [PEER_DOMAIN_VERIFY](#AN_CMD_TLSC_STORE_ID_PEER_DOMAIN_VERIFY), otherwise the [+TLSERR](#AN_AEC_AT_TLS_TLSERR) AEC reports CA Cert Missing or Peer Domain Missing. A server needs [CERT_NAME](#AN_CMD_TLSC_STORE_ID_CERT_NAME) and [PRI_KEY_NAME](#AN_CMD_TLSC_STORE_ID_PRI_KEY_NAME), and [DH_PARAM_NAME](#AN_CMD_TLSC_STORE_ID_DH_PARAM_NAME) if DHE cipher suites are used.
+
+See example [Basic TLS server configuration](#EXAMPLE_SOCKTLSSRV).
+
+#### Troubleshooting
+
+Errors in a TLS configuration are reported by the [+TLSERR](#AN_AEC_AT_TLS_TLSERR) AEC when a connection using it starts:
+
+- [CA Cert Missing](#AN_STATUS_TLS_CA_CERT_MISSING): peer authentication is enabled and no CA certificate is set.
+
+- [CA Cert Validation](#AN_STATUS_TLS_CA_CERT_VALIDATION): the CA certificate file could not be parsed.
+
+- [CA Cert Date Validation](#AN_STATUS_TLS_CA_CERT_DATE_VALIDATION): the system time has not been set, or the CA certificate has expired.
+
+- [Key Pair Incomplete](#AN_STATUS_TLS_KEY_PAIR_INCOMPLETE): only one of the certificate and private key is set.
+
+- [Peer Domain Missing](#AN_STATUS_TLS_PEER_DOMAIN_MISSING): domain name verification is enabled and no domain name is set.
+
+TLS handshake failures are reported by the module using the configuration:
+
+- SOCK: [+SOCKERR](#AN_AEC_AT_SOCKET_SOCKERR) with [Socket TLS Failed](#AN_STATUS_SOCKET_TLS_FAILED).
+
+- HTTP: [+HTTPERR](#AN_AEC_AT_HTTP_HTTPERR) with [HTTP TLS Failed](#AN_STATUS_HTTP_TLS_FAILED).
+
+- OTA: [+OTAERR](#AN_AEC_AT_OTA_OTAERR) with [TLS Error](#AN_STATUS_OTA_TLS_ERROR).
+
+- MQTT: [+MQTTCONN](#AN_AEC_AT_MQTT_MQTTCONN) reporting disconnected.
+
+- WSTA (Enterprise): [+WSTAERR](#AN_AEC_AT_WSTA_WSTAERR) with [STA Connection Failed](#AN_STATUS_STA_CONN_FAILED).
+
+The wolfSSL error code is only reported through the [SYSLOG](#AN_MOD_SYSLOG) module. Enable it with [+SYSLOGC](#AN_CMD_AT_SYSLOG_SYSLOGC) and look for a [+SYSLOG](#AN_AEC_AT_SYSLOG_SYSLOG) AEC from the TLS module containing "wolfSSL error: \<code\>". Common codes, see [TLS Error Codes](#AN_TLS_ERROR_CODES) for the full list:
+
+- -188 ASN_NO_SIGNER_E: the CA certificate did not sign the server’s certificate.
+
+- -322 DOMAIN_NAME_MISMATCH: the domain name does not match the server’s certificate.
+
+- -150 ASN_BEFORE_DATE_E or -151 ASN_AFTER_DATE_E: the server’s certificate is outside its validity period, or the system time has not been set.
+
+- -155 ASN_SIG_CONFIRM_E: a certificate signature could not be verified.
+
+---
 #### TLS configuration
 
 Set TLS parameters using the [+TLSC](#AN_CMD_AT_TLS_TLSC) and [+TLSCSC](#AN_CMD_AT_TLS_TLSCSC) commands.
+
+A new TLS configuration has the following security options enabled by default:
+
+- Peer authentication ([PEER_AUTH](#AN_CMD_TLSC_STORE_ID_PEER_AUTH)): a CA certificate must be provided via [CA_CERT_NAME](#AN_CMD_TLSC_STORE_ID_CA_CERT_NAME).
+
+- Peer domain name verification ([PEER_DOMAIN_VERIFY](#AN_CMD_TLSC_STORE_ID_PEER_DOMAIN_VERIFY)): the expected domain name must be provided via [DOMAIN_NAME](#AN_CMD_TLSC_STORE_ID_DOMAIN_NAME).
+
+- Server renegotiation info required ([SERVER_RENEG_INFO](#AN_CMD_TLSC_STORE_ID_SERVER_RENEG_INFO), client mode only).
+
+- Session caching ([SESSION_CACHING](#AN_CMD_TLSC_STORE_ID_SESSION_CACHING), client mode only).
+
+If a required certificate or domain name is not configured, the TLS handshake fails. Peer authentication and domain name verification apply in both client and server mode; a server that does not authenticate its clients must disable them.
 
 See examples [Basic TLS client configuration](#EXAMPLE_SOCKTLSCLI) and [Basic TLS server configuration](#EXAMPLE_SOCKTLSSRV).
 
@@ -13918,17 +15248,18 @@ The server name is configured via [SERVER_NAME](#AN_CMD_TLSC_STORE_ID_SERVER_NAM
 
 Peer authentication validates the peer’s certificate chain against trusted CA certificates provided in the CA certificate file.
 
-When peer authentication is enabled via [PEER_AUTH](#AN_CMD_TLSC_STORE_ID_PEER_AUTH), a valid CA certificate file name must be provided via [CA_CERT_NAME](#AN_CMD_TLSC_STORE_ID_CA_CERT_NAME). If the file contains multiple certificates, it must be in PEM format.
+Peer authentication is enabled by default and is controlled by [PEER_AUTH](#AN_CMD_TLSC_STORE_ID_PEER_AUTH). When it is enabled, a valid CA certificate file name must be provided via [CA_CERT_NAME](#AN_CMD_TLSC_STORE_ID_CA_CERT_NAME). If the file contains multiple certificates, it must be in PEM format.
 
 Peer authentication is recommended in client mode.
 
+---
 ##### Domain Name Verification
 
 Domain name verification confirms the peer’s certificate was issued for the expected server by matching the configured domain name against the certificate’s Subject Alternative Name (SAN), or Common Name (CN) if no SAN is present.
 
-When domain name verification is enabled via [PEER_DOMAIN_VERIFY](#AN_CMD_TLSC_STORE_ID_PEER_DOMAIN_VERIFY), the expected domain name must be provided via [DOMAIN_NAME](#AN_CMD_TLSC_STORE_ID_DOMAIN_NAME).
+Domain name verification is enabled by default and is controlled by [PEER_DOMAIN_VERIFY](#AN_CMD_TLSC_STORE_ID_PEER_DOMAIN_VERIFY). When it is enabled, the expected domain name must be provided via [DOMAIN_NAME](#AN_CMD_TLSC_STORE_ID_DOMAIN_NAME).
 
-Peer domain verification is recommented in client mode.
+Peer domain verification is recommended in client mode.
 
 ##### Cipher Suites
 
@@ -13954,11 +15285,12 @@ When signing is enabled via [EXTCRYPTO_OPS](#AN_CMD_TLSC_STORE_ID_EXTCRYPTO_OPS)
 
 See example [TLS client configuration with external crypto device](#EXAMPLE_EXTCRYPTO_TLS)
 
+---
 ##### Server Renegotiation Extension
 
 The TLS renegotiation info extension was introduced to address the TLS renegotiation vulnerability (CVE-2009-3555). Servers that are patched against this vulnerability include the renegotiation info extension during the TLS handshake.
 
-When the server renegotiation info ([SERVER_RENEG_INFO](#AN_CMD_TLSC_STORE_ID_SERVER_RENEG_INFO)) is configured as "required", the client rejects connections to servers that do not provide it. Othwerise, the client will connect even if the server does not send the extension. "required" is the recommented setting unless connecting to legacy servers that do not support the security patch. This option is only applicable to client mode.
+When the server renegotiation info ([SERVER_RENEG_INFO](#AN_CMD_TLSC_STORE_ID_SERVER_RENEG_INFO)) is configured as "required", the client rejects connections to servers that do not provide it. Otherwise, the client will connect even if the server does not send the extension. "required" is the recommended setting unless connecting to legacy servers that do not support the security patch. This option is only applicable to client mode.
 
 ##### Session Caching
 
@@ -14077,6 +15409,7 @@ When a TLS configuration parameter is modified, the previously cached session is
 </table>
 
 ---
+<a id="AN_TLS_ERROR_CODES"></a>
 ### TLS Error Codes
 
 To assist with debugging TLS issues, error codes from wolfSSL can be obtained by enabling logging via [+SYSLOGC](#AN_CMD_AT_SYSLOG_SYSLOGC).
@@ -15001,22 +16334,22 @@ To assist with debugging TLS issues, error codes from wolfSSL can be obtained by
 <tr>
 <td>GETTIME_ERROR</td>
 <td>-337</td>
-<td>gettimeofday failed ???</td>
+<td>gettimeofday() error</td>
 </tr>
 <tr>
 <td>GETITIMER_ERROR</td>
 <td>-338</td>
-<td>getitimer failed ???</td>
+<td>getitimer() error</td>
 </tr>
 <tr>
 <td>SIGACT_ERROR</td>
 <td>-339</td>
-<td>sigaction failed ???</td>
+<td>sigaction() error</td>
 </tr>
 <tr>
 <td>SETITIMER_ERROR</td>
 <td>-340</td>
-<td>setitimer failed ???</td>
+<td>setitimer() error</td>
 </tr>
 <tr>
 <td>LENGTH_ERROR</td>
@@ -15206,7 +16539,7 @@ To assist with debugging TLS issues, error codes from wolfSSL can be obtained by
 <tr>
 <td>EXTKEYUSE_AUTH_E</td>
 <td>-386</td>
-<td>ExtKeyUse server</td>
+<td>Extended Key Usage server/client auth not set</td>
 </tr>
 <tr>
 <td>SEND_OOB_READ_E</td>
@@ -15421,7 +16754,7 @@ To assist with debugging TLS issues, error codes from wolfSSL can be obtained by
 <tr>
 <td>UNSUPPORTED_EXTENSION</td>
 <td>-429</td>
-<td>TLSX not requested by client</td>
+<td>TLS extension not requested by the client</td>
 </tr>
 <tr>
 <td>PRF_MISSING</td>
@@ -15441,12 +16774,12 @@ To assist with debugging TLS issues, error codes from wolfSSL can be obtained by
 <tr>
 <td>TCA_INVALID_ID_TYPE</td>
 <td>-433</td>
-<td>TLSX TCA ID type invalid</td>
+<td>TLS extension Trusted CA ID type invalid</td>
 </tr>
 <tr>
 <td>TCA_ABSENT_ERROR</td>
 <td>-434</td>
-<td>TLSX</td>
+<td>TLS extension Trusted CA ID response absent</td>
 </tr>
 <tr>
 <td>UNSUPPORTED_SUITE</td>
@@ -15494,7 +16827,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -15545,7 +16878,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </tr>
 <tr>
 <td style="text-align: left;"><p>AT+TLSC=&lt;CONF&gt;,&lt;ID&gt;,&lt;DIGEST&gt;</p></td>
-<td style="text-align: left;"><p>Clear a hash digest/algorithm pair<br />
+<td style="text-align: left;"><p>Clear all digests (DIGEST must be empty)<br />
 <br />
 <a href="#AN_CMD_AT_TLS_TLSC_ID">ID</a> must be 9</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
@@ -15643,10 +16976,10 @@ Valid range is 1 to 5<br />
 </tbody>
 </table>
 
-| Response                | Description   |
-|-------------------------|---------------|
-| +TLSC:\<CONF\>,\<CONF\> | List response |
-| +TLSC:\<ID\>,\<VAL\>    | Read response |
+| Response                      | Description       |
+|-------------------------------|-------------------|
+| +TLSC:\<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| +TLSC:\<ID\>,\<VAL\>          | Read response     |
 
 **Response Syntax**
 
@@ -15666,12 +16999,17 @@ Valid range is 1 to 5<br />
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>&lt;CONF&gt;</p></td>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Configuration number<br />
-<br />
-Valid range is 1 to 4<br />
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
 </p></td>
 </tr>
 <tr>
@@ -15819,7 +17157,7 @@ Maximum length of string is 32<br />
 <td style="text-align: left;"><p>List of hash digest/algorithm pairs<br />
 This is a multiple value parameter<br />
 with an ID range 9.0 to 9.3<br />
-</p></td>
+See <a href="#AN_NOTE_TLSC_CERT_DIGESTS">Certificate Digests</a> below.</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
@@ -15873,7 +17211,7 @@ with an ID range 9.0 to 9.3<br />
 <td style="text-align: left;"><p>&lt;PEER_AUTH&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
-<td style="text-align: left;"><p>Peer authentication<br />
+<td style="text-align: left;"><p>Peer authentication. Default is enabled<br />
 </p>
 <table>
 <colgroup>
@@ -15898,7 +17236,7 @@ with an ID range 9.0 to 9.3<br />
 <td style="text-align: left;"><p>&lt;PEER_DOMAIN_VERIFY&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
-<td style="text-align: left;"><p>Peer domain verification<br />
+<td style="text-align: left;"><p>Peer domain verification. Default is enabled<br />
 </p>
 <table>
 <colgroup>
@@ -15923,7 +17261,7 @@ with an ID range 9.0 to 9.3<br />
 <td style="text-align: left;"><p>&lt;SERVER_RENEG_INFO&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
-<td style="text-align: left;"><p>Client mode: require renegotiation info from server<br />
+<td style="text-align: left;"><p>Client mode: require renegotiation info from server. Default is required<br />
 </p>
 <table>
 <colgroup>
@@ -15948,7 +17286,7 @@ with an ID range 9.0 to 9.3<br />
 <td style="text-align: left;"><p>&lt;SESSION_CACHING&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
-<td style="text-align: left;"><p>Client mode: cache and reuse session IDs<br />
+<td style="text-align: left;"><p>Client mode: cache and reuse session IDs. Default is enabled<br />
 </p>
 <table>
 <colgroup>
@@ -16009,6 +17347,15 @@ with an ID range 9.0 to 9.3<br />
 </tbody>
 </table>
 
+<a id="AN_NOTE_TLSC_CERT_DIGESTS"></a>
+**Certificate Digests**
+
+Up to four digest/algorithm pairs can be stored. Setting a pair without an index adds it after the existing entries; this fails if four are already stored. Setting a pair with an index (9.\<n\>) replaces that entry.
+
+The digest length must match the algorithm: SHA1 20 bytes, SHA2-224 28 bytes, SHA2-256 32 bytes, SHA2-384 48 bytes, SHA2-512 64 bytes.
+
+Setting an empty digest (\[\]) without an index removes all pairs; with an index (9.\<n\>) it removes that entry only, and later entries move down one place. A pair cannot be removed by specifying its digest.
+
 ---
 <a id="AN_CMD_AT_TLS_TLSCSC"></a>
 #### +TLSCSC
@@ -16021,7 +17368,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -16110,9 +17457,10 @@ Byte Array<br />
 </tbody>
 </table>
 
-| Response               | Description   |
-|------------------------|---------------|
-| +TLSCSC:\<ID\>,\<VAL\> | Read response |
+| Response                        | Description       |
+|---------------------------------|-------------------|
+| +TLSCSC:\<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| +TLSCSC:\<ID\>,\<VAL\>          | Read response     |
 
 **Response Syntax**
 
@@ -16131,6 +17479,20 @@ Byte Array<br />
 </tr>
 </thead>
 <tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
+</p></td>
+</tr>
 <tr>
 <td style="text-align: left;"><p>&lt;ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
@@ -16219,6 +17581,7 @@ with an ID range 2.0 to 2.31<br />
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_TLS_TLSERR"></a>
 #### +TLSERR
 
 ##### Description
@@ -16341,8 +17704,24 @@ Peer certificate digest pinning with [+TLSC](#AN_CMD_AT_TLS_TLSC)
 <a id="AN_MOD_WAP"></a>
 ## WAP (Module ID = 18)
 
+### Introduction
+
+The WAP module operates the RNWF02 as a soft access point.
+
+Configure the soft AP with [+WAPC](#AN_CMD_AT_WAP_WAPC) and then start it with [+WAP](#AN_CMD_AT_WAP_WAP)=1. While the soft AP is running only [MAC_BLOCKLIST](#AN_CMD_WAPC_STORE_ID_MAC_BLOCKLIST) may be changed.
+
+The soft AP cannot be started while the station is connected, or while a scan, periodic scan or the beacon service is running.
+
+Unless the network interface is configured as layer 2 only, starting the soft AP sets the interface address and starts the DHCP server (see [DHCP](#AN_MOD_DHCP)) and the DNS server.
+
+Clients are reported by the [+WAPSC](#AN_AEC_AT_WAP_WAPSC) AEC when they connect, [+WAPAIP](#AN_AEC_AT_WAP_WAPAIP) when they are assigned an address and [+WAPSD](#AN_AEC_AT_WAP_WAPSD) when they disconnect. Up to 10 clients are supported; the association IDs are the same as those used by the [ASSOC](#AN_MOD_ASSOC) module.
+
+Stopping the soft AP with [+WAP](#AN_CMD_AT_WAP_WAP)=0 completes asynchronously, the state continues to read as 1 until the soft AP has fully stopped.
+
+---
 ### Command Reference:
 
+<a id="AN_CMD_AT_WAP_WAPC"></a>
 #### +WAPC
 
 ##### Description
@@ -16353,7 +17732,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -16620,6 +17999,19 @@ Valid range is 60 to 86400<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WAPC_STORE_ID_MAC_BLOCKLIST"></span> 20</p></td>
+<td style="text-align: left;"><p>&lt;MAC_BLOCKLIST&gt;</p></td>
+<td style="text-align: left;"><p>MAC Address<br />
+</p></td>
+<td style="text-align: left;"><p>MAC address blocklist entry<br />
+<br />
+Valid range is 0 to 3<br />
+This is a multiple value parameter<br />
+with an ID range 20.0 to 20.3<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
 <td style="text-align: left;"><p>50</p></td>
 <td style="text-align: left;"><p>&lt;MFP_TYPE&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
@@ -16652,6 +18044,7 @@ Valid range is 60 to 86400<br />
 </table>
 
 ---
+<a id="AN_CMD_AT_WAP_WAP"></a>
 #### +WAP
 
 ##### Description
@@ -16660,7 +18053,7 @@ This command is used to enable the DCE’s hotspot access point functionality.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -16733,9 +18126,9 @@ Default [security](#_security_model) for the command is: `GGGG`
 </tbody>
 </table>
 
-| Response       | Description                |
-|----------------|----------------------------|
-| +WAP:\<STATE\> | Query state (disconnected) |
+| Response       | Description |
+|----------------|-------------|
+| +WAP:\<STATE\> | Query state |
 
 **Response Syntax**
 
@@ -16783,6 +18176,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_WAP_WAPAIP"></a>
 #### +WAPAIP
 
 ##### Description
@@ -16828,6 +18222,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_WAP_WAPSC"></a>
 #### +WAPSC
 
 ##### Description
@@ -16873,6 +18268,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_WAP_WAPSD"></a>
 #### +WAPSD
 
 ##### Description
@@ -16957,8 +18353,32 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_MOD_WSCN"></a>
 ## WSCN (Module ID = 19)
 
+### Introduction
+
+The WSCN module scans for access points. Two independent scan types are provided, each with its own configuration:
+
+- One-shot active or passive scans, configured with [+WSCNC](#AN_CMD_AT_WSCN_WSCNC) and started with [+WSCN](#AN_CMD_AT_WSCN_WSCN).
+
+- Periodic passive scans, configured with [+WSCNPC](#AN_CMD_AT_WSCN_WSCNPC) and started and stopped with [+WSCNP](#AN_CMD_AT_WSCN_WSCNP).
+
+Each access point found is reported by a [+WSCNIND](#AN_AEC_AT_WSCN_WSCNIND) AEC if [ASYNC_NOTIFY](#AN_CMD_WSCNC_STORE_ID_ASYNC_NOTIFY) is set, followed by a [+WSCNDONE](#AN_AEC_AT_WSCN_WSCNDONE) AEC with the number of results. The 8 results with the strongest RSSI may be read from [SCAN_RESULTS](#AN_CMD_WSCNC_STORE_ID_SCAN_RESULTS) after the scan.
+
+Results may be filtered by minimum RSSI ([RSSI_THRESH](#AN_CMD_WSCNC_STORE_ID_RSSI_THRESH)), by security type ([SEC_FILTER](#AN_CMD_WSCNC_STORE_ID_SEC_FILTER)) and by up to 4 SSIDs ([FILT_LIST](#AN_CMD_WSCNC_STORE_ID_FILT_LIST)), an SSID ending in `*` matches any SSID beginning with the preceding characters.
+
+Scanning is allowed while the station is connected, but not while it is connecting or disconnecting.
+
+#### Periodic Scanning
+
+A periodic scan sweeps the configured channels once every [INTERVAL](#AN_CMD_WSCNPC_STORE_ID_INTERVAL) milliseconds. The duration of a sweep is the passive slot time multiplied by the number of slots and the number of channels; the interval must be at least twice the sweep duration and at least the sweep duration plus 50 ms, otherwise the scan will not start.
+
+Periodic scanning requires the soft AP to be stopped. The [+WSCNPC](#AN_CMD_AT_WSCN_WSCNPC) configuration cannot be changed while a periodic scan is running.
+
+[+WSCNP](#AN_CMD_AT_WSCN_WSCNP)=0 allows the current sweep to complete and then sends the [+WSCNPDONE](#AN_AEC_AT_WSCN_WSCNPDONE) AEC. If a sweep fails to start the periodic scan ends with the [+WSCNPERR](#AN_AEC_AT_WSCN_WSCNPERR) AEC.
+
+---
 ### Command Reference:
 
 <a id="AN_CMD_AT_WSCN_WSCNC"></a>
@@ -16972,7 +18392,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -17130,7 +18550,7 @@ Byte Array<br />
 </p></td>
 <td style="text-align: left;"><p>Channel to scan (or 0 for all channels)<br />
 <br />
-Valid range is 1 to 13<br />
+Valid range is 0 to 13<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
@@ -17141,7 +18561,7 @@ Valid range is 1 to 13<br />
 </p></td>
 <td style="text-align: left;"><p>The time in milliseconds to wait for probe responses<br />
 <br />
-Unsigned 16-bit value<br />
+Valid range is 10 to 1500<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
@@ -17152,7 +18572,7 @@ Unsigned 16-bit value<br />
 </p></td>
 <td style="text-align: left;"><p>The time in milliseconds to wait for beacons<br />
 <br />
-Unsigned 16-bit value<br />
+Valid range is 10 to 1500<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
@@ -17163,7 +18583,7 @@ Unsigned 16-bit value<br />
 </p></td>
 <td style="text-align: left;"><p>Number of scan slots<br />
 <br />
-Unsigned 8-bit value<br />
+Positive unsigned 8-bit value<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
@@ -17174,12 +18594,12 @@ Unsigned 8-bit value<br />
 </p></td>
 <td style="text-align: left;"><p>Number of probes sent per active slot<br />
 <br />
-Unsigned 8-bit value<br />
+Valid range is 1 to 2<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>6</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_WSCNC_STORE_ID_RSSI_THRESH"></span> 6</p></td>
 <td style="text-align: left;"><p>&lt;RSSI_THRESH&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
@@ -17190,7 +18610,7 @@ Signed 8-bit value<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_WSCNC_STORE_ID_SEC_FILTER"></span> 7</p></td>
 <td style="text-align: left;"><p>&lt;SEC_FILTER&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
@@ -17235,7 +18655,7 @@ Signed 8-bit value<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>8</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_WSCNC_STORE_ID_ASYNC_NOTIFY"></span> 8</p></td>
 <td style="text-align: left;"><p>&lt;ASYNC_NOTIFY&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
@@ -17260,11 +18680,11 @@ Signed 8-bit value<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>10</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_WSCNC_STORE_ID_FILT_LIST"></span> 10</p></td>
 <td style="text-align: left;"><p>&lt;FILT_LIST&gt;</p></td>
 <td style="text-align: left;"><p>Byte Array<br />
 </p></td>
-<td style="text-align: left;"><p>SSID filter list<br />
+<td style="text-align: left;"><p>SSID filter list, an entry ending with '*' matches any SSID with the preceding prefix<br />
 This is a multiple value parameter<br />
 with an ID range 10.0 to 10.3<br />
 </p></td>
@@ -17303,7 +18723,7 @@ CH12</p></td>
 <td style="text-align: center;"><p><sup>10</sup><br />
 CH11</p></td>
 <td style="text-align: center;"><p><sup>9</sup><br />
-CH1</p></td>
+CH10</p></td>
 <td style="text-align: center;"><p><sup>8</sup><br />
 CH9</p></td>
 </tr>
@@ -17329,9 +18749,9 @@ CH1</p></td>
 </table>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -17416,7 +18836,7 @@ CH1</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>20</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_WSCNC_STORE_ID_SCAN_RESULTS"></span> 20</p></td>
 <td style="text-align: left;"><p>&lt;SCAN_RESULTS&gt;</p></td>
 <td style="text-align: left;"><p>Complex Value<sup>1</sup><br />
 (Read Only)</p></td>
@@ -17546,7 +18966,7 @@ This command is used to scan for infrastructure networks in range of the DCE.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -17606,6 +19026,701 @@ Default [security](#_security_model) for the command is: `GGGG`
 <tr>
 <td style="text-align: left;"><p>1</p></td>
 <td style="text-align: left;"><p>Active scanning.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+</tbody>
+</table>
+
+---
+<a id="AN_CMD_AT_WSCN_WSCNPC"></a>
+#### +WSCNPC
+
+##### Description
+
+This command is used to modify or query the behavior of the periodic passive scanning function.
+
+This command is a configuration command which supports setting and getting parameter values. The behaviour of configuration commands is described in general in the [Configuration Commands](#_configuration_commands) section.
+
+**Security**
+
+**Default [security](#_security_model) for the command is: `GGGG`**
+
+<table>
+<caption>Command Syntax</caption>
+<colgroup>
+<col style="width: 66%" />
+<col style="width: 28%" />
+<col style="width: 5%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Command</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;"><a href="#_security_model">Sec</a></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>AT+WSCNPC</p></td>
+<td style="text-align: left;"><p>Query all configuration elements<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>AT+WSCNPC=&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>Query a single element<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>AT+WSCNPC=&lt;ID&gt;,&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Set a single element<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+</tbody>
+</table>
+
+<table>
+<caption>Command Parameter Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+<br />
+Unsigned 8-bit value<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+String<br />
+Byte Array<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+| Response               | Description   |
+|------------------------|---------------|
+| +WSCNPC:\<ID\>,\<VAL\> | Read response |
+
+**Response Syntax**
+
+<table>
+<caption>Response Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Any</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+<table>
+<caption>Configuration Parameters</caption>
+<colgroup>
+<col style="width: 4%" />
+<col style="width: 28%" />
+<col style="width: 14%" />
+<col style="width: 46%" />
+<col style="width: 5%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">ID</th>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;"><a href="#_security_model">Sec</a></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>&lt;PRESET&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Configuration preset<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>Default.</p></td>
+</tr>
+</tbody>
+</table></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WSCNPC_STORE_ID_CHANNEL"></span> 1</p></td>
+<td style="text-align: left;"><p>&lt;CHANNEL&gt;</p></td>
+<td style="text-align: left;"><p>Unsigned Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Channel to scan (or 0 for all channels)<br />
+<br />
+Valid range is 0 to 13<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WSCNPC_STORE_ID_PASV_SLOT_TIME"></span> 3</p></td>
+<td style="text-align: left;"><p>&lt;PASV_SLOT_TIME&gt;</p></td>
+<td style="text-align: left;"><p>Unsigned Integer<br />
+</p></td>
+<td style="text-align: left;"><p>The time in milliseconds to wait for beacons<br />
+<br />
+Valid range is 10 to 1500<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>4</p></td>
+<td style="text-align: left;"><p>&lt;NUM_SLOTS&gt;</p></td>
+<td style="text-align: left;"><p>Unsigned Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Number of scan slots<br />
+<br />
+Positive unsigned 8-bit value<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>6</p></td>
+<td style="text-align: left;"><p>&lt;RSSI_THRESH&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>RSSI threshold (or 0 for none)<br />
+<br />
+Signed 8-bit value<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p>&lt;SEC_FILTER&gt;</p></td>
+<td style="text-align: left;"><p>Unsigned Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Security filter, bitmask of:<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0x01</p></td>
+<td style="text-align: left;"><p>Personal.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x02</p></td>
+<td style="text-align: left;"><p>Enterprise.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x04</p></td>
+<td style="text-align: left;"><p>Open.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x08</p></td>
+<td style="text-align: left;"><p>Unknown or unsupported.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x10</p></td>
+<td style="text-align: left;"><p>WPA or WPA2 Mixed Mode.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x20</p></td>
+<td style="text-align: left;"><p>WPA2.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x40</p></td>
+<td style="text-align: left;"><p>WPA3 or WPA3 Transition Mode.</p></td>
+</tr>
+</tbody>
+</table></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>8</p></td>
+<td style="text-align: left;"><p>&lt;ASYNC_NOTIFY&gt;</p></td>
+<td style="text-align: left;"><p>Bool<br />
+</p></td>
+<td style="text-align: left;"><p>Asynchronous notification<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>No scan indication AECs are generated.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>Indication AECs are generated.</p></td>
+</tr>
+</tbody>
+</table></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>10</p></td>
+<td style="text-align: left;"><p>&lt;FILT_LIST&gt;</p></td>
+<td style="text-align: left;"><p>Byte Array<br />
+</p></td>
+<td style="text-align: left;"><p>SSID filter list, an entry ending with '*' matches any SSID with the preceding prefix<br />
+This is a multiple value parameter<br />
+with an ID range 10.0 to 10.3<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>11</p></td>
+<td style="text-align: left;"><p>&lt;CHANMASK24&gt;</p></td>
+<td style="text-align: left;"><p>Unsigned Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Scan-all channel mask (2.4 GHz)<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: center;"><p><sup>15</sup><br />
+-</p></td>
+<td style="text-align: center;"><p><sup>14</sup><br />
+-</p></td>
+<td style="text-align: center;"><p><sup>13</sup><br />
+CH14</p></td>
+<td style="text-align: center;"><p><sup>12</sup><br />
+CH13</p></td>
+<td style="text-align: center;"><p><sup>11</sup><br />
+CH12</p></td>
+<td style="text-align: center;"><p><sup>10</sup><br />
+CH11</p></td>
+<td style="text-align: center;"><p><sup>9</sup><br />
+CH10</p></td>
+<td style="text-align: center;"><p><sup>8</sup><br />
+CH9</p></td>
+</tr>
+<tr>
+<td style="text-align: center;"><p><sup>7</sup><br />
+CH8</p></td>
+<td style="text-align: center;"><p><sup>6</sup><br />
+CH7</p></td>
+<td style="text-align: center;"><p><sup>5</sup><br />
+CH6</p></td>
+<td style="text-align: center;"><p><sup>4</sup><br />
+CH5</p></td>
+<td style="text-align: center;"><p><sup>3</sup><br />
+CH4</p></td>
+<td style="text-align: center;"><p><sup>2</sup><br />
+CH3</p></td>
+<td style="text-align: center;"><p><sup>1</sup><br />
+CH2</p></td>
+<td style="text-align: center;"><p><sup>0</sup><br />
+CH1</p></td>
+</tr>
+</tbody>
+</table>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0x0001</p></td>
+<td style="text-align: left;"><p>CH1</p></td>
+<td style="text-align: left;"><p>Channel 1 - 2412 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0002</p></td>
+<td style="text-align: left;"><p>CH2</p></td>
+<td style="text-align: left;"><p>Channel 2 - 2417 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0004</p></td>
+<td style="text-align: left;"><p>CH3</p></td>
+<td style="text-align: left;"><p>Channel 3 - 2422 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0008</p></td>
+<td style="text-align: left;"><p>CH4</p></td>
+<td style="text-align: left;"><p>Channel 4 - 2427 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0010</p></td>
+<td style="text-align: left;"><p>CH5</p></td>
+<td style="text-align: left;"><p>Channel 5 - 2432 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0020</p></td>
+<td style="text-align: left;"><p>CH6</p></td>
+<td style="text-align: left;"><p>Channel 6 - 2437 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0040</p></td>
+<td style="text-align: left;"><p>CH7</p></td>
+<td style="text-align: left;"><p>Channel 7 - 2442 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0080</p></td>
+<td style="text-align: left;"><p>CH8</p></td>
+<td style="text-align: left;"><p>Channel 8 - 2447 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0100</p></td>
+<td style="text-align: left;"><p>CH9</p></td>
+<td style="text-align: left;"><p>Channel 9 - 2452 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0200</p></td>
+<td style="text-align: left;"><p>CH10</p></td>
+<td style="text-align: left;"><p>Channel 10 - 2457 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0400</p></td>
+<td style="text-align: left;"><p>CH11</p></td>
+<td style="text-align: left;"><p>Channel 11 - 2462 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0800</p></td>
+<td style="text-align: left;"><p>CH12</p></td>
+<td style="text-align: left;"><p>Channel 12 - 2467 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x1000</p></td>
+<td style="text-align: left;"><p>CH13</p></td>
+<td style="text-align: left;"><p>Channel 13 - 2472 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x2000</p></td>
+<td style="text-align: left;"><p>CH14</p></td>
+<td style="text-align: left;"><p>Channel 14 - 2485 MHz.</p></td>
+</tr>
+</tbody>
+</table></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WSCNPC_STORE_ID_INTERVAL"></span> 12</p></td>
+<td style="text-align: left;"><p>&lt;INTERVAL&gt;</p></td>
+<td style="text-align: left;"><p>Unsigned Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Interval in milliseconds between the start of one periodic sweep and the start of the next. A sweep must fit within half of it, with a further small margin for result retrieval<br />
+<br />
+Valid range is 500 to 600000<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>20</p></td>
+<td style="text-align: left;"><p>&lt;SCAN_RESULTS&gt;</p></td>
+<td style="text-align: left;"><p>Complex Value<sup>1</sup><br />
+(Read Only)</p></td>
+<td style="text-align: left;"><p>Top scan results from previous scan, ordered by RSSI<br />
+This is a multiple value parameter<br />
+with an ID range 20.0 to 20.7<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+</tbody>
+</table>
+
+| No. | Complex Value                                        | Description    |
+|-----|------------------------------------------------------|----------------|
+| 1   | \<RSSI\>,\<SEC_TYPE\>,\<CHANNEL\>,\<BSSID\>,\<SSID\> | Scan indicator |
+
+**Complex Value Syntax**
+
+<table>
+<caption>Complex Value Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;RSSI&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Received signal strength<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;SEC_TYPE&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Recommended security type to use when connecting to this AP<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>-1</p></td>
+<td style="text-align: left;"><p>Unknown or unsupported.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>Open.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>2</p></td>
+<td style="text-align: left;"><p>WPA2-Personal Mixed Mode.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>3</p></td>
+<td style="text-align: left;"><p>WPA2-Personal.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>4</p></td>
+<td style="text-align: left;"><p>WPA3-Personal Transition Mode.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>5</p></td>
+<td style="text-align: left;"><p>WPA3-Personal.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>6</p></td>
+<td style="text-align: left;"><p>WPA2-Enterprise Mixed Mode.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p>WPA2-Enterprise.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>8</p></td>
+<td style="text-align: left;"><p>WPA3-Enterprise Transition Mode.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>9</p></td>
+<td style="text-align: left;"><p>WPA3-Enterprise.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;CHANNEL&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>The channel number of the detected device<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;BSSID&gt;</p></td>
+<td style="text-align: left;"><p>String<br />
+</p></td>
+<td style="text-align: left;"><p>The BSSID of detected device<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;SSID&gt;</p></td>
+<td style="text-align: left;"><p>String<br />
+</p></td>
+<td style="text-align: left;"><p>SSID of detected device<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+---
+<a id="AN_CMD_AT_WSCN_WSCNP"></a>
+#### +WSCNP
+
+##### Description
+
+This command is used to start or stop the periodic passive scanning function.
+
+**Security**
+
+**Default [security](#_security_model) for the command is: `GGGG`**
+
+<table>
+<caption>Command Syntax</caption>
+<colgroup>
+<col style="width: 66%" />
+<col style="width: 28%" />
+<col style="width: 5%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Command</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;"><a href="#_security_model">Sec</a></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>AT+WSCNP</p></td>
+<td style="text-align: left;"><p>Query state of the periodic scan function<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>AT+WSCNP=&lt;STATE&gt;</p></td>
+<td style="text-align: left;"><p>Set state of the periodic scan function<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+</tbody>
+</table>
+
+<table>
+<caption>Command Parameter Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;STATE&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>State of the periodic scan function<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>Disable.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>Enable.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+</tbody>
+</table>
+
+| Response         | Description |
+|------------------|-------------|
+| +WSCNP:\<STATE\> | Query state |
+
+**Response Syntax**
+
+<table>
+<caption>Response Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;STATE&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>State of the periodic scan function<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>Disabled.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>Enabled.</p></td>
 </tr>
 </tbody>
 </table></td>
@@ -17765,6 +19880,85 @@ Default [security](#_security_model) for the command is: `GGGG`
 </p></td>
 <td style="text-align: left;"><p>Number of results returned in this scan operation<br />
 </p></td>
+</tr>
+</tbody>
+</table>
+
+---
+<a id="AN_AEC_AT_WSCN_WSCNPDONE"></a>
+#### +WSCNPDONE
+
+##### Description
+
+Periodic scanning stopped on request. Sent once when the run ends, after the final sweep has reported its results, and is the only report of the run-wide counters.
+
+| AEC                       | Description               |
+|---------------------------|---------------------------|
+| +WSCNPDONE:\<NUM_SWEEPS\> | Periodic scanning stopped |
+
+**AEC Syntax**
+
+<table>
+<caption>AEC Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;NUM_SWEEPS&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Number of sweeps started over the periodic scanning run which has just ended<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+---
+<a id="AN_AEC_AT_WSCN_WSCNPERR"></a>
+#### +WSCNPERR
+
+##### Description
+
+**A periodic scan ended on a fault rather than by completing.**
+
+| AEC                      | Description         |
+|--------------------------|---------------------|
+| +WSCNPERR:\<ERROR_CODE\> | Periodic scan error |
+
+**AEC Syntax**
+
+<table>
+<caption>AEC Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ERROR_CODE&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Error code<br />
+</p>
+<p>See <a href="#_status_response_codes">Status Response Codes</a></p></td>
 </tr>
 </tbody>
 </table>
@@ -18023,6 +20217,315 @@ Setting SSID filter with [+WSCNC](#AN_CMD_AT_WSCN_WSCNC)
 </tbody>
 </table>
 
+Setting SSID prefix filters with [+WSCNC](#AN_CMD_AT_WSCN_WSCNC)
+<a id="EXAMPLE_8b708174983f8fc67c0f6d84e73ff4686d515be3"></a>
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCN">+WSCN</a>=1</strong></td>
+<td>Scan for Access Points, no SSID filter set</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-38,6,11,"00:01:02:03:04:05","SSID01"</strong></td>
+<td>AP on network "SSID01" found on channel 11</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-40,4,1,"00:03:06:09:0C:0F","SSID02"</strong></td>
+<td>AP on network "SSID02" found on channel 1</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-35,5,6,"00:04:08:0C:10:14","SSID11"</strong></td>
+<td>AP on network "SSID11" found on channel 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:3</strong></td>
+<td>Scan completed, 3 results found</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNC">+WSCNC</a>=10,"SSID0\*"</strong></td>
+<td>Add a filter matching every SSID starting with "SSID0"</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCN">+WSCN</a>=1</strong></td>
+<td>Scan for Access Points</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-38,6,11,"00:01:02:03:04:05","SSID01"</strong></td>
+<td>"SSID01" matches the filter prefix</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-40,4,1,"00:03:06:09:0C:0F","SSID02"</strong></td>
+<td>"SSID02" matches the filter prefix</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:2</strong></td>
+<td>Scan completed, 2 results found, "SSID11" does not match the filter prefix</td>
+</tr>
+</tbody>
+</table>
+
+Periodic passive scanning with an SSID prefix filter
+<a id="EXAMPLE_WSCNP_PREFIX_FILTER"></a>
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=1,6</strong></td>
+<td>Set the periodic scan channel to 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=3,500</strong></td>
+<td>Listen for 500 ms in each scan slot</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=4,2</strong></td>
+<td>Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=12,5000</strong></td>
+<td>Start a sweep every 5000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=6,-45</strong></td>
+<td>Discard anything weaker than -45 dBm</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=10,"ASSET\*"</strong></td>
+<td>Report only matching SSIDs, so beacons from ordinary access points are dropped</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=1</strong></td>
+<td>Enable periodic scanning, the first sweep starts immediately. All of the scan configuration must be in place by now: it is locked while scanning is enabled</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-30,0,6,"F8:F0:05:12:34:56","ASSET35"</strong></td>
+<td>A matching beacon is detected on channel 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:1</strong></td>
+<td>Sweep completed, 1 result found</td>
+</tr>
+<tr>
+<td></td>
+<td><code>..</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:0</strong></td>
+<td>A later sweep found no matching beacons</td>
+</tr>
+<tr>
+<td></td>
+<td><code>..</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=0</strong></td>
+<td>Stop periodic scanning</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNPDONE">+WSCNPDONE</a>:12</strong></td>
+<td>The run is over: 12 sweeps were carried out</td>
+</tr>
+</tbody>
+</table>
+
+Periodic passive scanning with an SSID prefix filter
+<a id="EXAMPLE_WSCNP_PAYLOAD_FILTER"></a>
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=1,6</strong></td>
+<td>Set the periodic scan channel to 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=3,500</strong></td>
+<td>Listen for 500 ms in each scan slot</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=4,2</strong></td>
+<td>Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=12,5000</strong></td>
+<td>Start a sweep every 5000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=6,-45</strong></td>
+<td>Discard anything weaker than -45 dBm</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=10,"CMD\*"</strong></td>
+<td>Report only SSIDs carrying command payloads</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=1</strong></td>
+<td>Enable periodic scanning, the first sweep starts immediately. All of the scan configuration must be in place by now: it is locked while scanning is enabled</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:0</strong></td>
+<td>A sweep which found no matching beacon</td>
+</tr>
+<tr>
+<td></td>
+<td><code>..</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-30,0,6,"F8:F0:05:AB:CD:EF","CMD3240138012398502495190247597"</strong></td>
+<td>Matching SSID payload received</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:1</strong></td>
+<td>Sweep completed, 1 result found</td>
+</tr>
+<tr>
+<td></td>
+<td><code>..</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=0</strong></td>
+<td>Stop periodic scanning</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNPDONE">+WSCNPDONE</a>:8</strong></td>
+<td>The run is over: 8 sweeps were carried out</td>
+</tr>
+</tbody>
+</table>
+
 ---
 <a id="AN_MOD_WSTA"></a>
 ## WSTA (Module ID = 20)
@@ -18032,6 +20535,42 @@ Setting SSID filter with [+WSCNC](#AN_CMD_AT_WSCN_WSCNC)
 The RNWF02 supports a wide range of features when operating as a Wi-Fi station (STA). It is designed for robust connectivity, security, and seamless network integration in a variety of applications.
 
 The [WSTA](#AN_MOD_WSTA) module is used to configure the STA, control STA connection and get information about the STA.
+
+#### Quick Start: Connecting to an Access Point
+
+1.  Configure the Access Point’s SSID, security type and credentials with [+WSTAC](#AN_CMD_AT_WSTA_WSTAC), see example [WPA Personal](#EXAMPLE_WSTA_PERSONAL). The configuration can only be changed while the STA is disconnected, except [ROAMING](#AN_CMD_WSTAC_STORE_ID_ROAMING).
+
+2.  Select how the STA’s network interface (index 0 by default, see [NETIF](#AN_MOD_NETIF)) obtains its IP address with [+NETIFC](#AN_CMD_AT_NETIF_NETIFC): the DHCP client ([DHCPC_EN](#AN_CMD_NETIFC_STORE_ID_DHCPC_EN), enabled by default), or a static address set with [IP_MASK](#AN_CMD_NETIFC_STORE_ID_IP_MASK) and [GATEWAY](#AN_CMD_NETIFC_STORE_ID_GATEWAY). If DHCP is disabled and no address is set, a link-local (ZeroConf) address is used.
+
+3.  Start the connection with [+WSTA](#AN_CMD_AT_WSTA_WSTA)=1. The OK response indicates the connection attempt has started, not that the STA is connected.
+
+4.  The [+WSTALU](#AN_AEC_AT_WSTA_WSTALU) AEC reports that the link is up, with the association ID, the BSSID of the Access Point and the channel.
+
+5.  The [+WSTAAIP](#AN_AEC_AT_WSTA_WSTAAIP) AEC reports each address assigned automatically, by DHCP or ZeroConf for IPv4 and by SLAAC for IPv6. It is sent again when the DHCP lease is renewed or the address changes. A static IPv4 address is not reported.
+
+See example [Connect at Wi-Fi and IP layers](#EXAMPLE_WSTA_CONNECT).
+
+##### Connection Refused
+
+[+WSTA](#AN_CMD_AT_WSTA_WSTA)=1 returns an error, and no AEC is sent, if:
+
+- the STA is already connecting or connected, or the soft AP is running: STA Connection Not Permitted;
+
+- a scan or periodic scan is in progress: Scan In Progress or Periodic Scan is Running;
+
+- the security configuration is not valid, for example an invalid passphrase, an unsupported security type or a missing Enterprise TLS context: Invalid Parameter.
+
+##### Connection Failed
+
+If the Access Point refuses or does not respond to the connection, or the connection has not completed within [CONN_TIMEOUT](#AN_CMD_WSTAC_STORE_ID_CONN_TIMEOUT) (10 seconds by default), the [+WSTAERR](#AN_AEC_AT_WSTA_WSTAERR) AEC is sent with the status STA Connection Failed. The cause is not reported; an incorrect password, an Access Point which cannot be found and an authentication failure all appear the same.
+
+After [+WSTAERR](#AN_AEC_AT_WSTA_WSTAERR) the STA is disconnected and the RNWF02 does not retry. To retry, send [+WSTA](#AN_CMD_AT_WSTA_WSTA)=1 again.
+
+##### Link Loss and Disconnection
+
+The [+WSTALD](#AN_AEC_AT_WSTA_WSTALD) AEC reports that the link has been lost. The RNWF02 does not reconnect automatically, send [+WSTA](#AN_CMD_AT_WSTA_WSTA)=1 to reconnect. Roaming between Access Points within the same ESSID is handled automatically while connected and is reported by the [+WSTAROAM](#AN_AEC_AT_WSTA_WSTAROAM) AEC, followed by [+WSTAAIP](#AN_AEC_AT_WSTA_WSTAAIP) when roaming is configured for layer 3.
+
+[+WSTA](#AN_CMD_AT_WSTA_WSTA)=0 disconnects the STA asynchronously: if the STA was connected the [+WSTALD](#AN_AEC_AT_WSTA_WSTALD) AEC follows, if it was still connecting no AEC follows. Querying [+WSTA](#AN_CMD_AT_WSTA_WSTA) returns 1 from the start of the connection attempt until the disconnection has completed.
 
 #### Configuring the STA
 
@@ -18047,7 +20586,7 @@ In order to connect the STA to an Access Point (AP), the following parameters mu
 
 Other parameters are optional, with default behaviour if they are not set:
 
-- The AP’s Wi-Fi channel (1-13 or "any"; defaults to "any"): [CHANNEL](#AN_CMD_WSTAC_STORE_ID_CHANNEL)
+- The AP’s Wi-Fi channel (1-13, or 0 for any; defaults to 0): [CHANNEL](#AN_CMD_WSTAC_STORE_ID_CHANNEL)
 
 - The AP’s BSSID: [BSSID](#AN_CMD_WSTAC_STORE_ID_BSSID)
 
@@ -18055,9 +20594,9 @@ Other parameters are optional, with default behaviour if they are not set:
 
 - Disabling of WPA3 Transition modes (defaults to "not modified"): [WPA3_TD](#AN_CMD_WSTAC_STORE_ID_WPA3_TD)
 
-- Connection attempt timeout (defaults to 100ms): [CONN_TIMEOUT](#AN_CMD_WSTAC_STORE_ID_CONN_TIMEOUT)
+- Connection attempt timeout in milliseconds (defaults to 10000 ms; 0 disables the timeout): [CONN_TIMEOUT](#AN_CMD_WSTAC_STORE_ID_CONN_TIMEOUT)
 
-- Roaming configuration (off, layer 2, or layer 3; defaults to layer 3): [ROAMING](#AN_CMD_WSTAC_STORE_ID_ROAMING)
+- Roaming configuration (disabled, Wi-Fi only, or layer 3; defaults to layer 3): [ROAMING](#AN_CMD_WSTAC_STORE_ID_ROAMING)
 
 ##### Security types and credentials
 
@@ -18072,11 +20611,11 @@ WPA Enterprise security provides encryption and various methods for authenticati
 
 The RNWF02 STA supports Simple Roaming, which enables faster handover between Access Points within an ESSID for maintained connectivity.
 
-Roaming can be configured at two different layers:
+Roaming can be configured as:
 
-- Layer 2 roaming - moving to another SSID, leaving layers 3 (IP) and above unchanged
+- Wi-Fi only - the STA moves to another AP within the same ESSID; the IP configuration (layer 3 and above) is unchanged
 
-- Layer 3 roaming - as above but also reconfiguring layer 3 via DHCP
+- Layer 3 - as above, and the DHCP lease is also renewed after each roam
 
 #### Controlling STA connection
 
@@ -18109,7 +20648,7 @@ Upon successful authentication, the client and server generate a Pairwise Master
 
 ##### Supported WPA Enterprise methods
 
-To maximise compatibility with a broad range of Enterprise networks, RNWF02 supports the following tunnel and credential methods:
+To maximise compatibility with a broad range of Enterprise networks, the RNWF02 supports the following tunnel and credential methods:
 
 <table>
 <tbody>
@@ -18565,9 +21104,23 @@ This command is used to read or set the DCE’s Wi-Fi station mode configuration
 
 This command is a configuration command which supports setting and getting parameter values. The behaviour of configuration commands is described in general in the [Configuration Commands](#_configuration_commands) section.
 
+###### Enterprise Parameter Visibility
+
+When the configuration is read, WPA Enterprise parameters are only reported when they apply to the current configuration. A parameter that is not reported can still be set.
+
+- No Enterprise parameters are reported until [ENT_TUNN_TLS_CONF](#AN_CMD_WSTAC_STORE_ID_ENT_TUNN_TLS_CONF) or [ENT_CRED_TLS_CONF](#AN_CMD_WSTAC_STORE_ID_ENT_CRED_TLS_CONF) is set to a TLS configuration index (see [+TLSC](#AN_CMD_AT_TLS_TLSC)).
+
+- [ENT_IDENT_PROT](#AN_CMD_WSTAC_STORE_ID_ENT_IDENT_PROT) is not reported when [ENT_TUNN_METHOD](#AN_CMD_WSTAC_STORE_ID_ENT_TUNN_METHOD) is NONE or TTLSv0.
+
+- [ENT_TUNN_TLS_CONF](#AN_CMD_WSTAC_STORE_ID_ENT_TUNN_TLS_CONF) is not reported when [ENT_TUNN_METHOD](#AN_CMD_WSTAC_STORE_ID_ENT_TUNN_METHOD) is NONE.
+
+- [ENT_CRED_TLS_CONF](#AN_CMD_WSTAC_STORE_ID_ENT_CRED_TLS_CONF) is not reported when [ENT_CRED_TYPE](#AN_CMD_WSTAC_STORE_ID_ENT_CRED_TYPE) is MSCHAPv2.
+
+- [ENT_MSCHV2_UN](#AN_CMD_WSTAC_STORE_ID_ENT_MSCHV2_UN) and [ENT_MSCHV2_PW](#AN_CMD_WSTAC_STORE_ID_ENT_MSCHV2_PW) are not reported when [ENT_CRED_TYPE](#AN_CMD_WSTAC_STORE_ID_ENT_CRED_TYPE) is TLS.
+
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -18816,7 +21369,7 @@ Valid range is 0 to 13<br />
 <td style="text-align: left;"><p>&lt;CONN_TIMEOUT&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Connection timeout in milliseconds<br />
+<td style="text-align: left;"><p>Connection timeout in milliseconds. 0 disables the timeout. Default is 10000<br />
 <br />
 Valid range is 0 to 0x7FFFFFFF<br />
 </p></td>
@@ -18924,7 +21477,7 @@ Maximum length of string is 255<br />
 <td style="text-align: left;"><p>&lt;ENT_TUNN_TLS_CONF&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>TLS configuration index (see +TLSC) to use for Enterprise tunnel<br />
+<td style="text-align: left;"><p>TLS configuration index (see +TLSC) to use for Enterprise tunnel. 0 if not configured<br />
 <br />
 Valid range is 0 to 4<br />
 </p></td>
@@ -18960,7 +21513,7 @@ Valid range is 0 to 4<br />
 <td style="text-align: left;"><p>&lt;ENT_CRED_TLS_CONF&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>TLS configuration index (see +TLSC) to use for Enterprise TLS credentials<br />
+<td style="text-align: left;"><p>TLS configuration index (see +TLSC) to use for Enterprise TLS credentials. 0 if not configured<br />
 <br />
 Valid range is 0 to 4<br />
 </p></td>
@@ -19053,7 +21606,7 @@ This command is used to control or query the DCE’s station mode functionality.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -19126,9 +21679,9 @@ Default [security](#_security_model) for the command is: `GGGG`
 </tbody>
 </table>
 
-| Response                     | Description |
-|------------------------------|-------------|
-| +WSTA:\<ASSOC_ID\>,\<STATE\> | State       |
+| Response        | Description |
+|-----------------|-------------|
+| +WSTA:\<STATE\> | State       |
 
 **Response Syntax**
 
@@ -19148,17 +21701,10 @@ Default [security](#_security_model) for the command is: `GGGG`
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>&lt;ASSOC_ID&gt;</p></td>
-<td style="text-align: left;"><p>Integer<br />
-</p></td>
-<td style="text-align: left;"><p>Association ID<br />
-</p></td>
-</tr>
-<tr>
 <td style="text-align: left;"><p>&lt;STATE&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Connected state<br />
+<td style="text-align: left;"><p>Station state<br />
 </p>
 <table>
 <colgroup>
@@ -19172,7 +21718,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </tr>
 <tr>
 <td style="text-align: left;"><p>1</p></td>
-<td style="text-align: left;"><p>Connected.</p></td>
+<td style="text-align: left;"><p>Connecting, connected or disconnecting.</p></td>
 </tr>
 </tbody>
 </table></td>
@@ -19268,6 +21814,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_WSTA_WSTAERR"></a>
 #### +WSTAERR
 
 ##### Description
@@ -19539,22 +22086,22 @@ Some disconnections, reconnections and roaming
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_AEC_AT_WSTA_WSTALU">+WSTALU</a>:1,"00:01:02:03:04:05",11</strong></td>
-<td>Link up: connected on channel 11</td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTALU">+WSTALU</a>:2,"00:01:02:03:04:05",11</strong></td>
+<td>Link up: each connection is given a new association ID</td>
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_AEC_AT_WSTA_WSTAAIP">+WSTAAIP</a>:1,"192.168.0.20"</strong></td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTAAIP">+WSTAAIP</a>:2,"192.168.0.20"</strong></td>
 <td>IP address received via auto configuration (DHCP/SLAAC)</td>
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_AEC_AT_WSTA_WSTAROAM">+WSTAROAM</a>:1</strong></td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTAROAM">+WSTAROAM</a>:2</strong></td>
 <td>STA has roamed</td>
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_AEC_AT_WSTA_WSTAAIP">+WSTAAIP</a>:1,"10.1.0.5"</strong></td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTAAIP">+WSTAAIP</a>:2,"10.1.0.5"</strong></td>
 <td>Change in IP address due to layer 3 roaming</td>
 </tr>
 <tr>
@@ -19574,8 +22121,136 @@ Some disconnections, reconnections and roaming
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_AEC_AT_WSTA_WSTALD">+WSTALD</a></strong></td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTALD">+WSTALD</a>:2</strong></td>
 <td>Link down</td>
+</tr>
+</tbody>
+</table>
+
+[+WSTA](#AN_CMD_AT_WSTA_WSTA) refused while a scan or periodic
+<a id="EXAMPLE_WSTA_BLOCKED_BY_SCAN"></a>
+
+<table>
+<tbody>
+<tr>
+<td></td>
+<td><code>scan is active</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCN">+WSCN</a>=1</strong></td>
+<td>Scan for Access Points</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTA">+WSTA</a>=1</strong></td>
+<td>Refused: a scan is in progress</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>ERROR:<n>,"Scan In Progress"</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:2</strong></td>
+<td>The scan in flight completes on its own</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTA">+WSTA</a>=1</strong></td>
+<td>Now accepted</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTALU">+WSTALU</a>:1,"00:01:02:03:04:05",6</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTAAIP">+WSTAAIP</a>:1,"192.168.0.20"</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTA">+WSTA</a>=0</strong></td>
+<td>Disconnect</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTALD">+WSTALD</a>:1</strong></td>
+<td>Link down</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=1</strong></td>
+<td>Enable periodic scanning</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTA">+WSTA</a>=1</strong></td>
+<td>Refused: periodic scanning is running</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>ERROR:<n>,"Periodic Scan is Running"</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=0</strong></td>
+<td>Disable periodic scanning</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNPDONE">+WSCNPDONE</a>:1</strong></td>
+<td>Periodic scanning stopped after 1 sweep</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTA">+WSTA</a>=1</strong></td>
+<td>Now accepted</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTALU">+WSTALU</a>:2,"00:01:02:03:04:05",6</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTAAIP">+WSTAAIP</a>:2,"192.168.0.20"</strong></td>
+<td></td>
 </tr>
 </tbody>
 </table>
@@ -19866,17 +22541,27 @@ WPA Enterprise: Configure STA connection parameters for EAP-PEAPv1/TLS
 <a id="AN_MOD_ASSOC"></a>
 ## ASSOC (Module ID = 22)
 
+### Introduction
+
+The ASSOC module lists the current Wi-Fi associations of the RNWF02. These are the station’s association with its access point, reported with AP_STA set to 0, and the soft AP’s connected clients, reported with AP_STA set to 1.
+
+Each association is reported by an [+ASSOC](#AN_AEC_AT_ASSOC_ASSOC) AEC which includes its current RSSI. [+ASSOC](#AN_CMD_AT_ASSOC_ASSOC)=\<ID\>,0 disconnects an association.
+
+The association IDs are the same as those reported by the [WSTA](#AN_MOD_WSTA) and [WAP](#AN_MOD_WAP) modules.
+
+---
 ### Command Reference:
 
+<a id="AN_CMD_AT_ASSOC_ASSOC"></a>
 #### +ASSOC
 
 ##### Description
 
-This command is used to query current WiFi associations.
+This command is used to query or disconnect WiFi associations.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -19902,6 +22587,12 @@ Default [security](#_security_model) for the command is: `GGGG`
 <tr>
 <td style="text-align: left;"><p>AT+ASSOC=&lt;ASSOC_ID&gt;</p></td>
 <td style="text-align: left;"><p>Query specific association ID<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>AT+ASSOC=&lt;ASSOC_ID&gt;,&lt;STATE&gt;</p></td>
+<td style="text-align: left;"><p>Disconnect association<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
@@ -19932,12 +22623,32 @@ Default [security](#_security_model) for the command is: `GGGG`
 Positive unsigned 16-bit value<br />
 </p></td>
 </tr>
+<tr>
+<td style="text-align: left;"><p>&lt;STATE&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>State to set<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>Disconnect the association.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
 </tbody>
 </table>
 
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_ASSOC_ASSOC"></a>
 #### +ASSOC
 
 ##### Description
@@ -20019,8 +22730,24 @@ Byte Array<br />
 ---
 ## SI (Module ID = 23)
 
+### Introduction
+
+The SI module reports system information. [+SI](#AN_CMD_AT_SI_SI) returns the system uptime in its response. The FILTER parameter selects additional statistics which are reported as AECs:
+
+- Wi-Fi memory pool usage, [+SIMERR](#AN_AEC_AT_SI_SIMERR) and [+SIMSTAT](#AN_AEC_AT_SI_SIMSTAT).
+
+- Wi-Fi packet counts, [+SIWPKTS](#AN_AEC_AT_SI_SIWPKTS).
+
+- Heap usage, [+SIHERR](#AN_AEC_AT_SI_SIHERR) and [+SIHEAP](#AN_AEC_AT_SI_SIHEAP).
+
+- Stack usage, [+SISTACK](#AN_AEC_AT_SI_SISTACK).
+
+If no filter is given all statistics are reported, a filter of 0 reports only the uptime.
+
+---
 ### Command Reference:
 
+<a id="AN_CMD_AT_SI_SI"></a>
 #### +SI
 
 ##### Description
@@ -20029,7 +22756,7 @@ This command is used to query system information.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -20144,6 +22871,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_SI_SIMSTAT"></a>
 #### +SIMSTAT
 
 ##### Description
@@ -20242,6 +22970,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_SI_SIMERR"></a>
 #### +SIMERR
 
 ##### Description
@@ -20280,6 +23009,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_SI_SIWPKTS"></a>
 #### +SIWPKTS
 
 ##### Description
@@ -20325,6 +23055,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_SI_SIHEAP"></a>
 #### +SIHEAP
 
 ##### Description
@@ -20391,6 +23122,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_SI_SIHERR"></a>
 #### +SIHERR
 
 ##### Description
@@ -20429,6 +23161,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_SI_SISTACK"></a>
 #### +SISTACK
 
 ##### Description
@@ -20483,8 +23216,26 @@ Default [security](#_security_model) for the command is: `GGGG`
 ---
 ## WPROV (Module ID = 25)
 
+### Introduction
+
+The WPROV module provides a TCP server which allows a remote client to send commands to the RNWF02 over the network, using either the ASCII or binary command format. It may be used, for example, to configure the station from a phone connected to the soft AP.
+
+1.  Bring up a network interface with [WAP](#AN_MOD_WAP) or [WSTA](#AN_MOD_WSTA).
+
+2.  Configure the service with [+WPROVC](#AN_CMD_AT_WPROV_WPROVC). The configuration cannot be changed while the service is running.
+
+3.  Start the service with [+WPROV](#AN_CMD_AT_WPROV_WPROV)=1.
+
+4.  When a client connects the [+WPROVAT](#AN_AEC_AT_WPROV_WPROVAT) AEC is sent; the client can then send commands, and receives their responses, over the connection.
+
+5.  When the client disconnects the [+WPROVDT](#AN_AEC_AT_WPROV_WPROVDT) AEC is sent.
+
+[+WPROV](#AN_CMD_AT_WPROV_WPROV)=0 stops the service. It cannot be sent over the provisioning connection itself.
+
+---
 ### Command Reference:
 
+<a id="AN_CMD_AT_WPROV_WPROVC"></a>
 #### +WPROVC
 
 ##### Description
@@ -20495,7 +23246,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -20690,6 +23441,7 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_CMD_AT_WPROV_WPROV"></a>
 #### +WPROV
 
 ##### Description
@@ -20698,7 +23450,7 @@ This command is used to control or query the provisioning service.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -20774,6 +23526,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_WPROV_WPROVAT"></a>
 #### +WPROVAT
 
 ##### Description
@@ -20826,6 +23579,7 @@ Default [security](#_security_model) for the command is: `GGGG`
 </table>
 
 ---
+<a id="AN_AEC_AT_WPROV_WPROVDT"></a>
 #### +WPROVDT
 
 ##### Description
@@ -20872,15 +23626,14 @@ Default [security](#_security_model) for the command is: `GGGG`
 
 Contained within each [IMAGE_INFO](#AN_CMD_DI_STORE_ID_IMAGE_INFO) is a `SEQ_NUM` value, this represents the image sequence number. The boot process prefers the image with the lower sequence number.
 
-> [!NOTE]
-> >
-> **The following sequence numbers are invalid:**
->
-> - 0
->
-> - 0xFFFFFFFF
->
-> 
+**
+
+The following sequence numbers are invalid:**
+
+- 0
+
+- 0xFFFFFFFF
+
 ---
 ### Command Reference:
 
@@ -20895,7 +23648,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -21166,9 +23919,9 @@ Query device information with [+DI](#AN_CMD_AT_DI_DI)
 
 ### Introduction
 
-Cryptographic operations can be delegated to an external crypto device, providing secure key storage and hardware-accelerated public key operations. The user can choose the on-module ATECC608A-TNGTLS or equivalent third-party device.
+Cryptographic operations can be delegated to an external crypto device controlled by the host application, providing secure key storage and hardware-accelerated public key operations. This can be a Microchip ATECC608 Trust&GO (TNGTLS) secure element, which is fitted on some module variants (see the module data sheet), or an equivalent third-party device.
 
-The ATECC608A-TNGTLS is the Trust-and-Go pre-provisioned variant of the ATECC608, featuring ECDSA signing, ECC Private Key secure storage, and X.509 compressed certificate storage. Access to the on-module secure element is made through a separate I2C or SWI interface.
+The ATECC608 Trust&GO is pre-provisioned, featuring ECDSA signing, ECC private key secure storage and X.509 compressed certificate storage. The host application accesses the secure element directly through its I2C or SWI interface; the RNWF02 does not communicate with it.
 
 The [+EXTCRYPTO](#AN_AEC_AT_EXTCRYPTO_EXTCRYPTO) AEC allows the DTE to receive a crypto operation request from the DCE. The [+EXTCRYPTO](#AN_CMD_AT_EXTCRYPTO_EXTCRYPTO) command is used to send the operation result back to the DCE.
 
@@ -21208,7 +23961,7 @@ This command is used to provide the result of an external crypto operation.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -21379,9 +24132,9 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;OP_SOURCE_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>The ID of the source requesting the operation<br />
+<td style="text-align: left;"><p>The ID of the source requesting the operation (the TLS configuration index for TLSC)<br />
 <br />
-Valid range is 1 to 2<br />
+Valid range is 1 to 4<br />
 </p></td>
 </tr>
 <tr>
@@ -21537,6 +24290,62 @@ Example of signing request/response using [+EXTCRYPTO](#AN_CMD_AT_EXTCRYPTO_EXTC
 ---
 ## WIFI (Module ID = 28)
 
+### Introduction
+
+The Wi-Fi module provides configuration settings for:
+
+- Wi-Fi power save
+
+- Bluetooth/Wi-Fi coexistence
+
+- Regulatory domain
+
+- Vendor-specific information elements (IEs)
+
+Configure these settings with the [`AT+WIFIC`](#AN_CMD_AT_WIFI_WIFIC) command.
+
+Vendor-specific IEs are supported in management frames in both station (STA) and SoftAP modes. The transmit and receive settings are independent.
+
+#### Transmitting vendor-specific IEs
+
+Configure transmission with [VSIE_TX_MASK](#AN_CMD_WIFIC_STORE_ID_VSIE_TX_MASK), [VSIE_TX_DATA](#AN_CMD_WIFIC_STORE_ID_VSIE_TX_DATA), and [VSIE_TX_DATA_COMMIT](#AN_CMD_WIFIC_STORE_ID_VSIE_TX_DATA_COMMIT).
+
+- VSIE_TX_MASK selects the frame types in which the IEs are transmitted. The IEs are added to frames of the selected types that the RNWF02 transmits. In SoftAP mode these are beacon and probe response frames; in STA mode, probe request frames.
+
+- VSIE_TX_DATA holds up to four IE payloads. Each payload starts with a three-byte organizationally unique identifier (OUI), followed by up to 252 bytes of vendor-specific data.
+
+- VSIE_TX_DATA_COMMIT activates the staged IE payloads.
+
+Changes to VSIE_TX_DATA are applied to a staged set and have no effect until VSIE_TX_DATA_COMMIT is set. Any change to the staged set clears the commit state; the previously committed IEs remain active until the new set is committed. Reading VSIE_TX_DATA returns the active entries when VSIE_TX_DATA_COMMIT is set and the staged entries otherwise.
+
+Clearing VSIE_TX_MASK or committing an empty VSIE_TX_DATA set disables vendor-specific IE transmission.
+
+Both VSIE_TX_MASK and the IE payloads can be updated at run time.
+
+See example [configuring vendor-specific IEs for transmission](#EXAMPLE_WIFI_VSIE_TX).
+
+---
+#### Receiving vendor-specific IEs
+
+Configure reception with [VSIE_RX_MASK](#AN_CMD_WIFIC_STORE_ID_VSIE_RX_MASK) and [VSIE_RX_OUI](#AN_CMD_WIFIC_STORE_ID_VSIE_RX_OUI).
+
+- VSIE_RX_MASK selects the frame types from which IEs are received. Set it to `0` to stop receiving IEs.
+
+- VSIE_RX_OUI is the three-byte OUI used to filter received IEs. Matching IEs from the selected frame types are reported by the [+WIFIVSIERX](#AN_AEC_AT_WIFI_WIFIVSIERX) AEC.
+
+In SoftAP mode, IEs can be received from all three supported frame types: beacons, probe requests, and probe responses. In STA mode, reception additionally depends on the connection and scan state:
+
+- While connected, beacon IEs are received only from the associated AP. Beacons from other APs are ignored.
+
+- While disconnected and not scanning, all beacons are ignored.
+
+- During a passive scan, beacon IEs are received from any AP that transmits a beacon within the scan interval.
+
+- During an active scan, IEs are received in probe responses (scan responses).
+
+See example [configuring vendor-specific IE reception](#EXAMPLE_WIFI_VSIE_RX).
+
+---
 ### Command Reference:
 
 <a id="AN_CMD_AT_WIFI_WIFIC"></a>
@@ -21550,7 +24359,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -21756,7 +24565,7 @@ CH12</p></td>
 <td style="text-align: center;"><p><sup>10</sup><br />
 CH11</p></td>
 <td style="text-align: center;"><p><sup>9</sup><br />
-CH1</p></td>
+CH10</p></td>
 <td style="text-align: center;"><p><sup>8</sup><br />
 CH9</p></td>
 </tr>
@@ -21782,9 +24591,9 @@ CH1</p></td>
 </table>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -21869,7 +24678,7 @@ CH1</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>20</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_WIFIC_STORE_ID_POWERSAVE"></span> 20</p></td>
 <td style="text-align: left;"><p>&lt;POWERSAVE&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
@@ -21894,7 +24703,7 @@ CH1</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>21</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_WIFIC_STORE_ID_POWERSAVE_LISTEN_INTERVAL"></span> 21</p></td>
 <td style="text-align: left;"><p>&lt;POWERSAVE_LISTEN_INTERVAL&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
@@ -21916,7 +24725,7 @@ Valid range is 10 to 6000<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>30</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_WIFIC_STORE_ID_COEX_ENABLED"></span> 30</p></td>
 <td style="text-align: left;"><p>&lt;COEX_ENABLED&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
@@ -21941,7 +24750,7 @@ Valid range is 10 to 6000<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>31</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_WIFIC_STORE_ID_COEX_INTERFACE_TYPE"></span> 31</p></td>
 <td style="text-align: left;"><p>&lt;COEX_INTERFACE_TYPE&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
@@ -22065,10 +24874,194 @@ Valid range is 10 to 6000<br />
 </table></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WIFIC_STORE_ID_VSIE_TX_MASK"></span> 50</p></td>
+<td style="text-align: left;"><p>&lt;VSIE_TX_MASK&gt;</p></td>
+<td style="text-align: left;"><p>Unsigned Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Frame types carrying the transmitted vendor-specific IEs, bitmask of:<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0x01</p></td>
+<td style="text-align: left;"><p>Beacon.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x02</p></td>
+<td style="text-align: left;"><p>Probe request.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x04</p></td>
+<td style="text-align: left;"><p>Probe response.</p></td>
+</tr>
+</tbody>
+</table></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WIFIC_STORE_ID_VSIE_TX_DATA"></span> 51</p></td>
+<td style="text-align: left;"><p>&lt;VSIE_TX_DATA&gt;</p></td>
+<td style="text-align: left;"><p>Byte Array<br />
+</p></td>
+<td style="text-align: left;"><p>Vendor-specific IE data<br />
+This is a multiple value parameter<br />
+with an ID range 51.0 to 51.3<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WIFIC_STORE_ID_VSIE_TX_DATA_COMMIT"></span> 52</p></td>
+<td style="text-align: left;"><p>&lt;VSIE_TX_DATA_COMMIT&gt;</p></td>
+<td style="text-align: left;"><p>Bool<br />
+</p></td>
+<td style="text-align: left;"><p>Commit the vendor-specific IE transmit data to the device. Modifying the transmit data clears this element, it must be set again for the new data to be transmitted<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>Transmit IE data has changed since it was last committed.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>Transmit IE data is live.</p></td>
+</tr>
+</tbody>
+</table></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WIFIC_STORE_ID_VSIE_RX_MASK"></span> 55</p></td>
+<td style="text-align: left;"><p>&lt;VSIE_RX_MASK&gt;</p></td>
+<td style="text-align: left;"><p>Unsigned Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Frame types filtered for vendor-specific IE reception, bitmask of:<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0x01</p></td>
+<td style="text-align: left;"><p>Beacon.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x02</p></td>
+<td style="text-align: left;"><p>Probe request.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x04</p></td>
+<td style="text-align: left;"><p>Probe response.</p></td>
+</tr>
+</tbody>
+</table></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WIFIC_STORE_ID_VSIE_RX_OUI"></span> 56</p></td>
+<td style="text-align: left;"><p>&lt;VSIE_RX_OUI&gt;</p></td>
+<td style="text-align: left;"><p>Byte Array<br />
+</p></td>
+<td style="text-align: left;"><p>Receive vendor-specific IE OUI filter<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
 </tbody>
 </table>
 
 ---
+### AEC Reference:
+
+<a id="AN_AEC_AT_WIFI_WIFIVSIERX"></a>
+#### +WIFIVSIERX
+
+##### Description
+
+**Received vendor-specific IE.**
+
+| AEC | Description |
+|----|----|
+| +WIFIVSIERX:\<FRAME_TYPE\>,\<SOURCE_MAC\>,\<RSSI\>,\<DATA\> | Received vendor-specific IE |
+
+**AEC Syntax**
+
+<table>
+<caption>AEC Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;FRAME_TYPE&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Management frame type<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>Beacon.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>2</p></td>
+<td style="text-align: left;"><p>Probe request.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>4</p></td>
+<td style="text-align: left;"><p>Probe response.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;SOURCE_MAC&gt;</p></td>
+<td style="text-align: left;"><p>String<br />
+</p></td>
+<td style="text-align: left;"><p>Source MAC address<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;RSSI&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Received signal strength in dBm<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;DATA&gt;</p></td>
+<td style="text-align: left;"><p>Byte Array<br />
+</p></td>
+<td style="text-align: left;"><p>Vendor-specific IE data<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
 ---
 ### Examples:
 
@@ -22198,10 +25191,166 @@ Settings with [+WIFIC](#AN_CMD_AT_WIFI_WIFIC)
 </tbody>
 </table>
 
+Configure vendor-specific information elements for transmission
+<a id="EXAMPLE_WIFI_VSIE_TX"></a>
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>=50,0x1</strong></td>
+<td>Select beacon frames for VSIE transmission</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>=51,\[01020301AABBCC\]</strong></td>
+<td>Stage OUI 01-02-03, type 01, and data AABBCC</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>=51,\[01020302DDEEFF\]</strong></td>
+<td>Stage OUI 01-02-03, type 02, and data DDEEFF</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>=51</strong></td>
+<td>Read the staged VSIE data</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>:51.0,\[01020301AABBCC\]</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>:51.1,\[01020302DDEEFF\]</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>=52,1</strong></td>
+<td>Commit the staged data, the entries become live</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>=51.0,\[01020301010101\]</strong></td>
+<td>Amend the data following the OUI of entry 0</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>=51</strong></td>
+<td>Read the staged VSIE data</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>:51.0,\[01020301010101\]</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>:51.1,\[01020302DDEEFF\]</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>=52,1</strong></td>
+<td>Commit again to make the amended data live</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+Configure vendor-specific information element reception
+<a id="EXAMPLE_WIFI_VSIE_RX"></a>
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>=55,0x1</strong></td>
+<td>Receive from beacon frames</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WIFI_WIFIC">+WIFIC</a>=56,\[001122\]</strong></td>
+<td>Set RX OUI filter</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WIFI_WIFIVSIERX">+WIFIVSIERX</a>:1,"00:11:22:33:44:55",-55,\[001122AABB\]</strong></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
 ---
 <a id="AN_MOD_NVM"></a>
 ## NVM (Module ID = 29)
 
+### Introduction
+
+The NVM module provides access to the alternate firmware partition, the partition which does not contain the running firmware image. All offsets are relative to the start of the partition, its size is reported by the NUM_SECTORS and SECTOR_SZ configuration values.
+
+- [+NVMER](#AN_CMD_AT_NVM_NVMER) erases whole 4 KB sectors. The erase runs in the background and completes with the [+NVMER](#AN_AEC_AT_NVM_NVMER) AEC, or [+NVMERR](#AN_AEC_AT_NVM_NVMERR) on failure.
+
+- [+NVMWR](#AN_CMD_AT_NVM_NVMWR) writes up to 1024 bytes and completes immediately. A write must not cross a sector boundary, and the area must have been erased first. The data is read back and verified after writing.
+
+- [+NVMRD](#AN_CMD_AT_NVM_NVMRD) reads up to 1024 bytes, which are returned in the command response.
+
+- [+NVMCHK](#AN_CMD_AT_NVM_NVMCHK) calculates a CRC16 or SHA digest over an area of the partition, as selected by [CHECK_MODE](#AN_CMD_NVMC_STORE_ID_CHECK_MODE). The calculation runs in the background and the result is reported by the [+NVMCHK](#AN_AEC_AT_NVM_NVMCHK) AEC, or [+NVMERR](#AN_AEC_AT_NVM_NVMERR) on failure.
+
+Only one erase, write, read or check operation may run at a time, a new operation fails while an erase or check is in progress. After [+OTAINV](#AN_CMD_AT_OTA_OTAINV) erase and write are locked until the next reset.
+
+---
 ### Command Reference:
 
 <a id="AN_CMD_AT_NVM_NVMC"></a>
@@ -22215,7 +25364,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -22283,6 +25432,43 @@ Unsigned 8-bit value<br />
 String<br />
 Byte Array<br />
 </p></td>
+<td style="text-align: left;"><p>Parameter value<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+| Response             | Description   |
+|----------------------|---------------|
+| +NVMC:\<ID\>,\<VAL\> | Read response |
+
+**Response Syntax**
+
+<table>
+<caption>Response Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Any</p></td>
 <td style="text-align: left;"><p>Parameter value<br />
 </p></td>
 </tr>
@@ -22357,7 +25543,7 @@ Byte Array<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>4</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_NVMC_STORE_ID_CHECK_MODE"></span> 4</p></td>
 <td style="text-align: left;"><p>&lt;CHECK_MODE&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
@@ -22410,7 +25596,7 @@ This command allows sector erase within the alternate firmware partition.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -22482,7 +25668,7 @@ This command allows data to be written to the alternate firmware partition. Writ
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -22564,7 +25750,7 @@ This command allows checking of the alternate firmware partition.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -22636,7 +25822,7 @@ This command allows reading of the alternate firmware partition.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -22753,6 +25939,7 @@ Valid range is 1 to 1024<br />
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_NVM_NVMER"></a>
 #### +NVMER
 
 ##### Description
@@ -22863,6 +26050,7 @@ Byte Array<br />
 </table>
 
 ---
+<a id="AN_AEC_AT_NVM_NVMERR"></a>
 #### +NVMERR
 
 ##### Description
@@ -23004,6 +26192,12 @@ The RNWF02 device has non-volatile memory (NVM) with two partitions which may be
 
 The partitions can be referred to as "low" and "high" based on their physical addresses. They can also be referred to as "current" and "alternate" based on their usage at a given time; in normal operation, the "current" partition contains a copy of the currently running firmware image, while the "alternate" partition may be blank or may contain a rollback image, a latent image or any other data.
 
+| Region         | Address    | Size                |
+|----------------|------------|---------------------|
+| Low partition  | 0x60000000 | 960 KB (0xF0000)    |
+| High partition | 0x600F0000 | 960 KB (0xF0000)    |
+| File system    | 0x601E0000 | Not affected by DFU |
+
 The DFU process should involve the following steps:
 
 1.  Determine the NVM partition in which to program the firmware image.
@@ -23014,7 +26208,9 @@ The DFU process should involve the following steps:
 
 4.  Erase and program the NVM partition.
 
-#### 1. Determine the NVM partition in which to program the firmware image
+5.  Reset the device.
+
+#### Determine the NVM partition in which to program the firmware image
 
 The appropriate NVM partition ("alternate", "current", "low" or "high") depends on the user’s upgrade policy. Two common upgrade policies are:
 
@@ -23022,23 +26218,34 @@ The appropriate NVM partition ("alternate", "current", "low" or "high") depends 
 
 - A "golden image" policy in which the initial firmware image is programmed to one partition (based on physical address), and subsequent firmware images are always programmed to the other partition.
 
-#### 2. Prepare the firmware image
+---
+#### Prepare the firmware image
 
-Locate the released RNWF02.bootable.dfu file for the firmware version to which you want to upgrade.
+Locate the released rnwf02_dfu_high.bin file for the firmware version to which you want to upgrade.
 
-Read the firmware image from the file, then update two values:
+Read the firmware image from the file, then update two values in the image header. Both are 32-bit little endian values:
+
+| Offset | Length | Field                         |
+|--------|--------|-------------------------------|
+| 0      | 4      | Sequence Number               |
+| 20     | 4      | Firmware Image Source Address |
 
 - Sequence Number: The Sequence Number is the boot priority of the firmware image. Use the [+DFUSEQ](#AN_CMD_AT_DFU_DFUSEQ) command to get the offset, length and value for updating it.
 
 - Firmware Image Source Address: The Firmware Image Source Address must match the physical address of the NVM partition in which the firmware image is to be programmed. Use the [+DFUADR](#AN_CMD_AT_DFU_DFUADR) command, with the desired partition, to get the offset, length and value for updating it.
 
+Neither field is covered by the image signatures, so updating them does not invalidate the image. No other part of the image may be changed.
+
+The image with the lowest Sequence Number has the highest boot priority. The Sequence Number of a latent image is 0xFFFFFFFF; a latent image is never booted until it is activated. For an activated image, the value returned is 0x10 lower than the lowest Sequence Number of any valid image already in the NVM, so the new image boots on the next reset. The lowest four bits of the Sequence Number are used by the boot ROM and are always returned as 0.
+
 > [!NOTE]
-> A status code of [DFU_ADDRESS_WARNING](#AN_STATUS_DFU_ADDRESS_WARNING) is a warning that the other partition does not contain a bootable firmware image. If the user proceeds in spite of this warning and step 4 does not complete for any reason, the device will reach a state in which it contains no bootable firmware images. In that situation, repeating step 4 should recover the device, so long as the user still has the firmware image available.
+> A status code of [DFU_ADDRESS_WARNING](#AN_STATUS_DFU_ADDRESS_WARNING) is a warning that the other partition does not contain a bootable firmware image. The offset, length and value in the response are still valid and should be used. If the user proceeds in spite of this warning and step 4 does not complete for any reason, the device will reach a state in which it contains no bootable firmware images. In that situation, repeating step 4 should recover the device, so long as the user still has the firmware image available.
 
 > [!NOTE]
 > Save the value of the NVM partition address for use during step 4.
 
-#### 3. Boot the device in DFU mode
+---
+#### Boot the device in DFU mode
 
 Boot the device in DFU mode using the following steps:
 
@@ -23048,13 +26255,24 @@ Boot the device in DFU mode using the following steps:
 
 3.  Deassert RNWF02 pin NMCLR.
 
-#### 4. Erase and program the NVM partition
+In DFU mode the device runs the Programming Executive (PE), which communicates over a UART at 230400 baud, 8 data bits, no parity, 1 stop bit.
 
-Configure pins PB0 and PB1 for UART Rx and Tx respectively.
+#### Erase and program the NVM partition
 
-Use Programming Executive (PE) commands to erase the NVM partition, at the address obtained during step 2.
+Configure pins PB0 and PB1 for UART Rx and Tx respectively, from the RNWF02’s point of view: the host transmits to PB0 and receives from PB1.
+
+Use Programming Executive (PE) commands to erase the NVM partition, at the address obtained during step 2. Erase only the number of pages needed for the image.
+
+> [!WARNING]
+> Do not use the PE chip erase command. It erases both partitions and the file system.
 
 Use Programming Executive (PE) commands to program the new firmware image into the NVM partition, at the address obtained during step 2.
+
+#### Reset the device
+
+Reset the device to leave DFU mode. If the image was prepared as activated it is booted; if it was prepared as latent, the previous image continues to run.
+
+The state of the image in each partition can be read with [+DI](#AN_CMD_AT_DI_DI). A latent image in the alternate partition can be activated later with [+OTAACT](#AN_CMD_AT_OTA_OTAACT).
 
 ---
 ### Command Reference:
@@ -23068,7 +26286,7 @@ This command is used to get the parameters for modifying the little endian addre
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -23198,7 +26416,7 @@ This command is used to get the parameters for modifying the little endian seque
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -23362,12 +26580,12 @@ Example of using [+DFUADR](#AN_CMD_AT_DFU_DFUADR) and [+DFUSEQ](#AN_CMD_AT_DFU_D
 <tr>
 <td>→</td>
 <td><strong>AT<a href="#AN_CMD_AT_DFU_DFUSEQ">+DFUSEQ</a>=0</strong></td>
-<td>Get parameters for making an activated image</td>
+<td>Get parameters for making a latent image</td>
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_CMD_AT_DFU_DFUSEQ">+DFUSEQ</a>:0,4,0xFFEEDDC0</strong></td>
-<td>Offset 0, length 4, value 0xFFEEDDC0</td>
+<td><strong><a href="#AN_CMD_AT_DFU_DFUSEQ">+DFUSEQ</a>:0,4,0xFFFFFFFF</strong></td>
+<td>Offset 0, length 4, value 0xFFFFFFFF</td>
 </tr>
 <tr>
 <td>←</td>
@@ -23382,12 +26600,12 @@ Example of using [+DFUADR](#AN_CMD_AT_DFU_DFUADR) and [+DFUSEQ](#AN_CMD_AT_DFU_D
 <tr>
 <td>→</td>
 <td><strong>AT<a href="#AN_CMD_AT_DFU_DFUSEQ">+DFUSEQ</a>=1</strong></td>
-<td>Get parameters for making a latent image</td>
+<td>Get parameters for making an activated image</td>
 </tr>
 <tr>
 <td>←</td>
-<td><strong><a href="#AN_CMD_AT_DFU_DFUSEQ">+DFUSEQ</a>:0,4,0xFFFFFFFF</strong></td>
-<td>Offset 0, length 4, value 0xFFFFFFFF</td>
+<td><strong><a href="#AN_CMD_AT_DFU_DFUSEQ">+DFUSEQ</a>:0,4,0xFFEEDDB0</strong></td>
+<td>Offset 0, length 4, value 0xFFEEDDB0 (lower than running image 0xFFEEDDC0)</td>
 </tr>
 <tr>
 <td>←</td>
@@ -23433,18 +26651,30 @@ Once awake, the RNWF02 will run until the next idle period, whereby it will tran
 
 When PPS is enabled and Wi-Fi is connected, the RNWF02 operates Wi-Fi Legacy Powersave to minimise power consumption while maintaining network connectivity.
 
+If Wi-Fi power save ([POWERSAVE](#AN_CMD_WIFIC_STORE_ID_POWERSAVE)) is not already enabled, enabling PPS enables it. It remains enabled after PPS is disabled. If Wi-Fi power save cannot be enabled, enabling PPS fails with [PPS_WIFI_PS_NOT_ENABLED](#AN_STATUS_PPS_WIFI_PS_NOT_ENABLED).
+
 ###### Listen Interval
 
-The RNWF02 wakes periodically based on the configured Wi-Fi Listen Interval, which determines how often it wakes to listen for buffered traffic from the AP. By default, this interval is 10 beacon periods, roughly equivalent to 1 second (typical beacon interval is 102.4 ms).
+The RNWF02 wakes periodically based on the configured Wi-Fi Listen Interval, which determines how often it wakes to listen for buffered traffic from the AP. By default, this interval is 10 beacon periods, roughly equivalent to 1 second (typical beacon interval is 102.4 ms). The range is 3 to 100 beacon periods.
+
+The listen interval is configured with [POWERSAVE_LISTEN_INTERVAL](#AN_CMD_WIFIC_STORE_ID_POWERSAVE_LISTEN_INTERVAL).
+
+Traffic buffered by the AP may be delayed by up to one listen interval. A longer interval saves more power but increases this delay.
+
+Each sleep period lasts between 40 ms and 20 seconds; the RNWF02 does not sleep if the next event is less than 40 ms away.
 
 ###### DTIM (Delivery Traffic Indication Message) Awareness
 
 To efficiently receive broadcast and multicast traffic buffered by the AP, the device aims to wake on the closest DTIM period aligned with the configured listen interval. The DTIM is a special beacon that signals buffered broadcast/multicast data transmission by the AP. For example, if the Listen Interval is set to 10 beacon periods (default) and the AP’s DTIM period is 3, the RNWF02 will wake after 9 beacon periods (i.e. on the 3rd DTIM) instead of exactly after 10 beacons. This alignment maximises power savings by minimising unnecessary wake events while ensuring timely reception of important broadcast traffic.
 
+<a id="_sleep_timing_accuracy"></a>
 ##### Sleep Timing Accuracy
 
-To optimise power saving and accuracy of wake intervals, it is strongly recommended to connect and enable a secondary oscillator (SOSC) clocked at 32768 Khz. The SOSC provides a high-accuracy timing source during sleep, allowing for more precise wake-up timing when using longer sleep durations.
+To optimise power saving and accuracy of wake intervals, it is strongly recommended to connect and enable a secondary oscillator (SOSC) clocked at 32.768 kHz. The SOSC provides a high-accuracy timing source during sleep, allowing for more precise wake-up timing when using longer sleep durations. The crystal is connected to pins PB3 and PB4.
 
+The SOSC shares pin PB4 with the BT_ACT input of 3-wire Wi-Fi/BT coexistence. If [SEC_OSC_ENABLED](#AN_CMD_PPSC_STORE_ID_SEC_OSC_ENABLED) is set while coexistence is enabled in 3-wire mode ([COEX_ENABLED](#AN_CMD_WIFIC_STORE_ID_COEX_ENABLED) and [COEX_INTERFACE_TYPE](#AN_CMD_WIFIC_STORE_ID_COEX_INTERFACE_TYPE)), enabling PPS fails with [CONFIG_CONFLICT](#AN_STATUS_CONFIG_CONFLICT). Use 2-wire coexistence, or do not enable the SOSC.
+
+---
 ##### PPS Pause
 
 PPS Pause allows temporarily suspending Platform Power-Save operation without fully disabling it. This is useful during periods where continuous device responsiveness is required, such as during critical command sequences, firmware updates or other high-activity times when entering sleep state would be undesirable.
@@ -23455,39 +26685,60 @@ PPS Pause allows temporarily suspending Platform Power-Save operation without fu
 
 - Multiple pause commands can be issued sequentially, and the pause durations extend the total pause period.
 
-- After all active pause timers expire, the RNWF02 automatically sends an Automatic Event Callback (AEC) for informational purposes, to indicate that PPS will now resume.
+- After all active pause timers expire, the RNWF02 automatically sends the [+PPS](#AN_AEC_AT_PPS_PPS) AEC to indicate that PPS will now resume.
 
 - Once the pause period has expired, the system will return to normal PPS operation, entering low-power sleep during idle periods.
+
+##### Hardware Connections
+
+| Signal | Pin | Direction | Function |
+|----|----|----|----|
+| WAKE_REQ | PB2 (INT0) | Input | Wake request from the host, active on the falling edge. The RNWF02 enables an internal pull-up while PPS or XDS is active. |
+| WAKE_RDY | PA4 | Output | Low when the RNWF02 is ready to receive commands, high while it may be asleep. |
+| SOSC | PB3, PB4 | \- | Optional 32.768 kHz crystal, see [Sleep Timing Accuracy](#_sleep_timing_accuracy). PB4 is also the BT_ACT input of 3-wire coexistence. |
+| MCLR | MCLR | Input | Reset. Also wakes the RNWF02 from XDS. |
 
 <a id="_wake_up_via_uart"></a>
 ##### Wake-Up via UART
 
 - The RNWF02 UART interface uses the dedicated flow control pins to wake the device:
 
-  - **WAKE_REQ (PB2):** The host DTE asserts a **rising edge** on this pin to request RNWF02 to wake from PPS sleep.
+  - **WAKE_REQ (PB2):** The host DTE drives this pin **low** (falling edge) to request the RNWF02 to wake from PPS sleep.
 
-  - **WAKE_RDY (PA4):** The RNWF02 responds by pulling this pin **active-low** once it is ready to receive AT commands.
+  - **WAKE_RDY (PA4):** The RNWF02 drives this pin **low** once it is ready to receive AT commands.
 
-> [!NOTE]
-> - RTS/CTS hardware flow control is **not supported** under PPS operation on RNWF02
->
-> - Wake-up latency from PPS mode is approximately **4 ms**.
+**
+- RTS/CTS hardware flow control is **not supported** under PPS operation on RNWF02
 
-##### Timed Wake-Up
+- Wake-up latency from PPS mode is approximately **4 ms**.**
 
-In the case that an RNWF02 user doesn’t have the dedicated flow control pins PB2/PB4 wired to wake the device, it is possible to set a fixed time for PPS to be active. This is configured with `AT+PPSC=3,<duration>`, and can also be set when enabling PPS with `AT+PPS=1,<duration>`.
+---
+<a id="AN_NOTE_PPS_WAKE_SEQ"></a>
+##### Wake Sequence
 
-##### Command Transmission and AUTOSLEEP
+1.  Enable PPS with `AT+PPS=1`. After the OK response WAKE_RDY goes high, and the RNWF02 may sleep at any time.
 
-- After the RNWF02 asserts WAKE_RDY, the host DTE can transmit AT commands over UART.
+2.  While WAKE_RDY is high, do not send on the UART. The UART is powered down while the RNWF02 sleeps, so data sent then is lost; UART activity does not wake the RNWF02.
 
-- The RNWF02 remains awake while processing the commands and any corresponding Wi-Fi or protocol activity.
+3.  Drive WAKE_REQ low. The RNWF02 wakes and drives WAKE_RDY low. WAKE_REQ can be released once WAKE_RDY is low.
 
-- Once no further commands or traffic are outstanding, the system returns to PPS sleep.
+4.  Send AT commands. The RNWF02 stays awake for at least the AUTOSLEEP time plus 10 ms after waking, and for as long as commands are being received or processed. AUTOSLEEP is configured with `AT+PPSC=2,<delayms>` (default 10 ms, range 10 to 3000 ms).
 
-- The AUTOSLEEP parameter controls how long the RNWF02 remains awake after asserting WAKE_RDY, allowing multiple commands to be sent without re-waking each time:
+5.  When the RNWF02 returns to sleep WAKE_RDY goes high. Repeat from step 3 to send more commands.
 
-  - Configured with `AT+PPSC=2,<delayms>`, this extends the time RNWF02 stays awake after asserting WAKE_RDY, providing the host extra time to send multiple commands or complete terminal sessions.
+![PPS wake sequence timing diagram](images/RNWF02_AT_Command_Reference_uml1.svg)
+
+The RNWF02 also wakes on its own timers, for example at each listen interval. These wakes do not drive WAKE_RDY low, and the host must still use the wake sequence before sending. AECs can be sent whenever the RNWF02 is awake, so the host must always be ready to receive.
+
+During a PPS pause (`AT+PPS=2`) the RNWF02 stays awake and WAKE_RDY stays low until the pause expires.
+
+When PPS ends, because of `AT+PPS=0` or the PPS duration expiring, WAKE_RDY goes low and stays low. `AT+PPS=0` must itself be sent using the wake sequence.
+
+##### PPS Duration
+
+If the host does not have the dedicated pins WAKE_REQ (PB2) and WAKE_RDY (PA4) connected, PPS can be limited to a fixed duration so that the RNWF02 returns to normal operation without being woken.
+
+The duration, in seconds, is configured with `AT+PPSC=3,<duration>` and must be set before PPS is enabled with `AT+PPS=1`. When the duration expires, PPS is disabled, the RNWF02 remains awake, and the [+PPS](#AN_AEC_AT_PPS_PPS) AEC is sent with the status PPS Timeout. A duration of 0 (the default) means PPS remains active until disabled.
 
 ---
 ##### Configuration and Usage
@@ -23569,12 +26820,12 @@ In the case that an RNWF02 user doesn’t have the dedicated flow control pins P
 </tbody>
 </table>
 
-> [!NOTE]
-> - RNWF02 PPS operation requires using the UART wake-up protocol via WAKE_REQ and WAKE_RDY pins. No conventional RTS/CTS hardware flow control is available during PPS.
->
-> - To send an AT command, the host DTE must assert WAKE_REQ to wake the device
->
-> - When PPS is active, the host DTE cannot send AT commands unless the wake-up protocol is actively used.
+**
+- RNWF02 PPS operation requires using the UART wake-up protocol via WAKE_REQ and WAKE_RDY pins. No conventional RTS/CTS hardware flow control is available during PPS.
+
+- To send an AT command, the host DTE must drive WAKE_REQ low to wake the device, and wait for WAKE_RDY to go low, see [Wake Sequence](#AN_NOTE_PPS_WAKE_SEQ).
+
+- When PPS is active, the host DTE cannot send AT commands unless the wake-up protocol is actively used. In the example above, `AT+PPS=2,5` and `AT+PPS=0` are sent after PPS is enabled, so the host must wake the device before each of them.**
 
 ---
 #### EXtreme Deep Sleep (XDS)
@@ -23589,9 +26840,7 @@ XDS mode puts the RNWF02 into the absolute lowest power state, with all but the 
 
   - Pull **MCLR** pin low (hardware reset)
 
-  - Assert the **WAKE_REQ** signal (UART wake protocol)
-
-  - Drive **INT0** pin high
+  - Drive **WAKE_REQ** (PB2, INT0) low
 
 > [!NOTE]
 > Wake-up triggers a **full system reboot**.
@@ -23601,6 +26850,8 @@ XDS mode puts the RNWF02 into the absolute lowest power state, with all but the 
 To enter XDS mode, send the following command:
 
 `AT+PPS=10`
+
+The OK response is sent first; the RNWF02 then enters XDS when it is next idle.
 
 #### Summary
 
@@ -23626,7 +26877,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -23700,6 +26951,43 @@ Byte Array<br />
 </tbody>
 </table>
 
+| Response             | Description   |
+|----------------------|---------------|
+| +PPSC:\<ID\>,\<VAL\> | Read response |
+
+**Response Syntax**
+
+<table>
+<caption>Response Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Any</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
 <table>
 <caption>Configuration Parameters</caption>
 <colgroup>
@@ -23741,7 +27029,7 @@ Byte Array<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_PPSC_STORE_ID_SEC_OSC_ENABLED"></span> 1</p></td>
 <td style="text-align: left;"><p>&lt;SEC_OSC_ENABLED&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
@@ -23800,7 +27088,7 @@ This command allows the firmware to change the state of platform power save.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -23819,14 +27107,14 @@ Default [security](#_security_model) for the command is: `GGGG`
 <tbody>
 <tr>
 <td style="text-align: left;"><p>AT+PPS=&lt;PPS_STATE&gt;</p></td>
-<td style="text-align: left;"><p>PPS<br />
+<td style="text-align: left;"><p>Set PPS state<br />
 <br />
 <a href="#AN_CMD_AT_PPS_PPS_PPS_STATE">PPS_STATE</a> must not be 2</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>AT+PPS=&lt;PPS_STATE&gt;,&lt;PAUSE_TIME&gt;</p></td>
-<td style="text-align: left;"><p>PPS<br />
+<td style="text-align: left;"><p>Pause PPS for a period<br />
 <br />
 <a href="#AN_CMD_AT_PPS_PPS_PPS_STATE">PPS_STATE</a> must be 2</p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
@@ -23895,6 +27183,7 @@ Valid range is 1 to 3600<br />
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_PPS_PPS"></a>
 #### +PPS
 
 ##### Description
@@ -23903,7 +27192,7 @@ Valid range is 1 to 3600<br />
 
 | AEC                | Description |
 |--------------------|-------------|
-| +PPS:\<PPS EVENT\> | PPS Event   |
+| +PPS:\<PPS_EVENT\> | PPS Event   |
 
 **AEC Syntax**
 
@@ -23923,27 +27212,11 @@ Valid range is 1 to 3600<br />
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>&lt;PPS EVENT&gt;</p></td>
+<td style="text-align: left;"><p>&lt;PPS_EVENT&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Event code<br />
-</p>
-<table>
-<colgroup>
-<col style="width: 14%" />
-<col style="width: 85%" />
-</colgroup>
-<tbody>
-<tr>
-<td style="text-align: left;"><p>1</p></td>
-<td style="text-align: left;"><p>Timeout.</p></td>
-</tr>
-<tr>
-<td style="text-align: left;"><p>2</p></td>
-<td style="text-align: left;"><p>Pause expired.</p></td>
-</tr>
-</tbody>
-</table></td>
+<td style="text-align: left;"><p>PPS status code<br />
+One of the PPS status codes <a href="#AN_STATUS_PPS_TIMEOUT">PPS_TIMEOUT</a> (PPS duration expired) or <a href="#AN_STATUS_PPS_PAUSE_EXPIRED">PPS_PAUSE_EXPIRED</a> (PPS pause ended), see <a href="#_status_response_codes">Status Response Codes</a>.</p></td>
 </tr>
 </tbody>
 </table>
@@ -24030,8 +27303,18 @@ Configuring and enabling PPS
 </table>
 
 ---
+<a id="AN_MOD_SYSLOG"></a>
 ## SYSLOG (Module ID = 32)
 
+### Introduction
+
+When enabled with [ENABLED](#AN_CMD_SYSLOGC_STORE_ID_ENABLED), the SYSLOG module reports internal log events as [+SYSLOG](#AN_AEC_AT_SYSLOG_SYSLOG) AECs.
+
+Each event carries a timestamp in milliseconds, the ID of the module which raised it, a severity and a message of up to 127 characters. All events are reported, there is no filtering by module or severity.
+
+Logging is disabled by default and the setting is not stored in the configuration archive. Currently only the TLS module reports events.
+
+---
 ### Command Reference:
 
 <a id="AN_CMD_AT_SYSLOG_SYSLOGC"></a>
@@ -24045,7 +27328,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -24119,6 +27402,43 @@ Byte Array<br />
 </tbody>
 </table>
 
+| Response                | Description   |
+|-------------------------|---------------|
+| +SYSLOGC:\<ID\>,\<VAL\> | Read response |
+
+**Response Syntax**
+
+<table>
+<caption>Response Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Any</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
 <table>
 <caption>Configuration Parameters</caption>
 <colgroup>
@@ -24160,7 +27480,7 @@ Byte Array<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_SYSLOGC_STORE_ID_ENABLED"></span> 1</p></td>
 <td style="text-align: left;"><p>&lt;ENABLED&gt;</p></td>
 <td style="text-align: left;"><p>Bool<br />
 </p></td>
@@ -24190,6 +27510,7 @@ Byte Array<br />
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_SYSLOG_SYSLOG"></a>
 #### +SYSLOG
 
 ##### Description
@@ -24220,20 +27541,20 @@ Byte Array<br />
 <tr>
 <td style="text-align: left;"><p>&lt;TIMESTAMP&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
-String<br />
-Byte Array<br />
 </p></td>
-<td style="text-align: left;"><p>Log timestamp<br />
+<td style="text-align: left;"><p>System time in milliseconds when the message was logged<br />
+<br />
+Unsigned 32-bit value<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>&lt;MODULE_ID&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
-String<br />
-Byte Array<br />
 </p></td>
-<td style="text-align: left;"><p>Module ID<br />
-</p></td>
+<td style="text-align: left;"><p>ID of the module that logged the message<br />
+<br />
+Unsigned 8-bit value<br />
+Module IDs are listed in the headings of the <a href="#_status_response_codes">Status Response Codes</a> tables.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>&lt;EVENT_SEVERITY&gt;</p></td>
@@ -24298,7 +27619,7 @@ Byte Array<br />
 
 ### Introduction
 
-The RNWF02 device has an anti-rollback counter (ARB) which can be used to prevent vulnerable firmware from running on the device.
+The RNWF02 has an anti-rollback counter (ARB) which can be used to prevent vulnerable firmware from running on the device.
 
 The value in the ARB is between 0 and 127 and can be increased but never decreased. If a firmware image has a security level which is lower than the value in the ARB, then that image will not boot.
 
@@ -24323,7 +27644,7 @@ This command is used to get or increase the DCE’s ARB value, and to get the cu
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -24605,6 +27926,14 @@ See example [File download to local filesystem](#EXAMPLE_HTTP_3).
 
 The HTTP client can utilize an existing TCP socket connection instead of creating its own. This is useful when you need more control over the connection setup, such as pre-configuring socket options or managing connection pooling.
 
+- Create and connect a TCP socket using socket commands ([+SOCKO](#AN_CMD_AT_SOCKET_SOCKO), [+SOCKBR](#AN_CMD_AT_SOCKET_SOCKBR)).
+
+- Optionally upgrade the socket to TLS using [+SOCKTLS](#AN_CMD_AT_SOCKET_SOCKTLS).
+
+- Assign the socket ID to the HTTP configuration using [+HTTPC](#AN_CMD_AT_HTTP_HTTPC) ID 10 (SOCKET_ID parameter).
+
+- Perform HTTP GET operations as normal using [+HTTPGET](#AN_CMD_AT_HTTP_HTTPGET).
+
 > [!NOTE]
 > When using an existing socket, do not configure the HOST (ID 2) or PORT (ID 3) parameters in the HTTP configuration.
 
@@ -24625,6 +27954,29 @@ See example [HTTP basic authentication using additional request headers](#EXAMPL
 The read-only configuration parameter **CONTENT_LENGTH** reports the Content-Length value from the HTTP response headers after they are received.
 
 ---
+#### Error Handling
+
+The HTTP client reports errors via two mechanisms:
+
+- **HTTP status codes** - The server’s response status is reported via [+HTTPRSPCODE](#AN_AEC_AT_HTTP_HTTPRSPCODE). Non-2xx status codes (e.g., 401 Unauthorized, 404 Not Found, 500 Internal Server Error) indicate the server rejected the request.
+
+- **Transport errors** - Connection-level errors are reported via [+HTTPERR](#AN_AEC_AT_HTTP_HTTPERR). These indicate failures before or during HTTP communication.
+
+Common transport errors:
+
+- **DNS Failed** - The server hostname could not be resolved
+
+- **TLS Failed** - TLS handshake failed (wrong CA certificate, SNI mismatch, expired certificate)
+
+- **Connect Failed** - TCP connection to server failed
+
+- **Timeout** - No response received within the configured timeout period
+
+- **Receive Failed** - Error receiving data from server
+
+- **Send Failed** - Error sending request to server
+
+---
 ### Command Reference:
 
 <a id="AN_CMD_AT_HTTP_HTTPC"></a>
@@ -24638,7 +27990,7 @@ This command is a configuration command which supports setting and getting param
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -24727,10 +28079,10 @@ Byte Array<br />
 </tbody>
 </table>
 
-| Response                 | Description   |
-|--------------------------|---------------|
-| +HTTPC:\<CONF\>,\<CONF\> | List response |
-| +HTTPC:\<ID\>,\<VAL\>    | Read response |
+| Response                       | Description       |
+|--------------------------------|-------------------|
+| +HTTPC:\<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| +HTTPC:\<ID\>,\<VAL\>          | Read response     |
 
 **Response Syntax**
 
@@ -24750,12 +28102,17 @@ Byte Array<br />
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>&lt;CONF&gt;</p></td>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>HTTP Configuration number<br />
-<br />
-Value is 1<br />
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
 </p></td>
 </tr>
 <tr>
@@ -24833,7 +28190,7 @@ Format of IPv6 address is 'a:b:c:d::e:f'<br />
 <td style="text-align: left;"><p>&lt;PORT&gt;</p></td>
 <td style="text-align: left;"><p>Unsigned Integer<br />
 </p></td>
-<td style="text-align: left;"><p>Listening port<br />
+<td style="text-align: left;"><p>Server port (e.g. 80 for HTTP, 443 for HTTPS); must be set<br />
 </p></td>
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
@@ -24869,11 +28226,11 @@ Positive unsigned 8-bit value<br />
 <td style="text-align: left;"><p><code>GGGG</code></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p><span id="AN_CMD_HTTPC_STORE_ID_TLS_CONF"></span> 7</p></td>
 <td style="text-align: left;"><p>&lt;TLS_CONF&gt;</p></td>
 <td style="text-align: left;"><p>Integer<br />
 </p></td>
-<td style="text-align: left;"><p>TLS configuration index (see +TLSC)<br />
+<td style="text-align: left;"><p>TLS configuration index (see +TLSC). 0 disables TLS<br />
 <br />
 Valid range is 0 to 4<br />
 </p></td>
@@ -25035,7 +28392,7 @@ This command performs an HTTP GET operation.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -25111,7 +28468,7 @@ This command performs an HTTP data read operation.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -25235,7 +28592,7 @@ This command performs an HTTP close operation.
 
 **Security**
 
-Default [security](#_security_model) for the command is: `GGGG`
+**Default [security](#_security_model) for the command is: `GGGG`**
 
 <table>
 <caption>Command Syntax</caption>
@@ -25607,6 +28964,7 @@ Value is 1<br />
 </table>
 
 ---
+<a id="AN_AEC_AT_HTTP_HTTPERR"></a>
 #### +HTTPERR
 
 ##### Description
@@ -25679,7 +29037,7 @@ HTTPS download
 </tr>
 <tr>
 <td>→</td>
-<td><strong>AT<a href="#AN_CMD_AT_TLS_TLSC">+TLSC</a>=1,6,"example.com"</strong></td>
+<td><strong>AT<a href="#AN_CMD_AT_TLS_TLSC">+TLSC</a>=1,6,"www.example.com"</strong></td>
 <td>Set the server domain</td>
 </tr>
 <tr>
@@ -25867,7 +29225,7 @@ HTTPS download from TCP socket
 </tr>
 <tr>
 <td>→</td>
-<td><strong>AT<a href="#AN_CMD_AT_TLS_TLSC">+TLSC</a>=1,6,"example.com"</strong></td>
+<td><strong>AT<a href="#AN_CMD_AT_TLS_TLSC">+TLSC</a>=1,6,"www.example.com"</strong></td>
 <td>Set the server domain</td>
 </tr>
 <tr>
@@ -26166,6 +29524,2206 @@ HTTP basic authentication using additional request headers
 </table>
 
 ---
+<a id="AN_MOD_WBCN"></a>
+## WBCN (Module ID = 35)
+
+### Introduction
+
+The [WBCN](#AN_MOD_WBCN) module transmits Wi-Fi beacon frames. Together with periodic passive scanning, it supports application-defined beacon advertising and discovery.
+
+Information is carried in the **beacon SSID**: the payload is an application-defined string of at most 32 characters. The format of the payload is left to the application. A common leading string allows the SSID prefix filter of the [WSCN](#AN_MOD_WSCN) module to select matching beacons from those of ordinary access points.
+
+Additional application information can be carried alongside the SSID in one or more vendor-specific IEs. Each IE contains up to 252 bytes of vendor-specific data.
+
+Configure vendor-specific IEs with the [AT+WIFIC](#AN_CMD_AT_WIFI_WIFIC) command.
+
+Beacons are transmitted with the [+WBCN](#AN_CMD_AT_WBCN_WBCN) command described below; beacons from other devices are detected using the [+WSCNP](#AN_CMD_AT_WSCN_WSCNP) command.
+
+#### Configuring the beacon
+
+Set the beacon parameters using the [+WBCNC](#AN_CMD_AT_WBCN_WBCNC) command.
+
+Five parameters control the beacon. Three of them decide what is transmitted:
+
+- The channel to transmit the beacon on: [CHANNEL](#AN_CMD_WBCNC_STORE_ID_CHANNEL). A non-zero channel selects that one channel; zero takes the channel set from [CHANMASK24](#AN_CMD_WBCNC_STORE_ID_CHANMASK24).
+
+- The 2.4 GHz channel bit mask used when CHANNEL is zero: [CHANMASK24](#AN_CMD_WBCNC_STORE_ID_CHANMASK24)
+
+- The SSID carried in the beacon, which holds the payload: [SSID](#AN_CMD_WBCNC_STORE_ID_SSID)
+
+The other two decide how often the beacon is repeated, and how many times:
+
+- The time between beacons, in milliseconds: [INTERVAL](#AN_CMD_WBCNC_STORE_ID_INTERVAL)
+
+- The number of beacons to transmit, or zero to beacon until stopped: [NUM_BEACONS](#AN_CMD_WBCNC_STORE_ID_NUM_BEACONS)
+
+> [!NOTE]
+> The selected channel or channel mask must lie within the active regulatory domain’s channel mask, otherwise the value is rejected. CHANNEL zero with an empty CHANMASK24 is refused when beaconing starts with [WBCN_NO_CHANNELS](#AN_STATUS_WBCN_NO_CHANNELS). INTERVAL can be configured from 100 ms to 600000 ms. When beaconing starts, INTERVAL must be strictly greater than 20 ms multiplied by the number of selected channels; otherwise the start is refused with [WBCN_INTERVAL_TOO_SHORT](#AN_STATUS_WBCN_INTERVAL_TOO_SHORT).
+>
+> The SSID may be at most 32 characters. A payload longer than that is rejected.
+
+---
+#### Transmitting beacons
+
+Once the beacon has been configured, start beaconing using the [+WBCN](#AN_CMD_AT_WBCN_WBCN) command, and stop it with the same command.
+
+Beaconing takes the form of a run rather than a single transmission: the configured beacon is transmitted on the configured channel set once every INTERVAL milliseconds, until NUM_BEACONS transmissions have completed, or indefinitely if NUM_BEACONS is zero. One transmission covers every selected channel, so NUM_SENT counts channel sets, not individual beacon frames.
+
+A run which cannot continue ends with [+WBCNERR](#AN_AEC_AT_WBCN_WBCNERR).
+
+A run always ends with one of two AECs:
+
+- [+WBCNDONE](#AN_AEC_AT_WBCN_WBCNDONE) - the run ended as asked, either because NUM_BEACONS channel-set transmissions completed, or because it was stopped.
+
+- [+WBCNERR](#AN_AEC_AT_WBCN_WBCNERR) - the run was abandoned before completion.
+
+Stopping a run is a request rather than an immediate halt: success is returned straight away, the run ends at the next point at which nothing is outstanding, and [+WBCNDONE](#AN_AEC_AT_WBCN_WBCNDONE) follows. Stopping when no run is in progress succeeds and does nothing.
+
+The beacon configuration is locked while a run is in progress: a write with [+WBCNC](#AN_CMD_AT_WBCN_WBCNC) is rejected with [STORE_UPDATE_BLOCKED](#AN_STATUS_STORE_UPDATE_BLOCKED), and a second attempt to start a run with [WBCN_IN_PROGRESS](#AN_STATUS_WBCN_IN_PROGRESS). Reads are permitted throughout. Changing the payload therefore means ending the current run first: stop it, wait for [+WBCNDONE](#AN_AEC_AT_WBCN_WBCNDONE), write the new [SSID](#AN_CMD_WBCNC_STORE_ID_SSID), then start a new run. The module goes idle before that AEC is sent, so the configuration is always writable by the time the host sees it.
+
+Beaconing can overlap periodic passive scanning with [+WSCNP](#AN_CMD_AT_WSCN_WSCNP), which allows a device to transmit and scan at the same time.
+
+> [!NOTE]
+> When beaconing and periodic passive scanning overlap, scanning takes precedence. Beaconing resumes after the scan sweep completes.
+
+> [!NOTE]
+> Beaconing is unavailable while soft-AP mode is running; a start is refused with [WBCN_AP_MODE_ACTIVE](#AN_STATUS_WBCN_AP_MODE_ACTIVE).
+
+#### Detecting beacons
+
+Beacons transmitted by other devices are detected using periodic passive scanning.
+
+Set the periodic scan channel ([CHANNEL](#AN_CMD_WSCNPC_STORE_ID_CHANNEL)) to match the beacon channel, optionally adjust the passive scan slot time ([PASV_SLOT_TIME](#AN_CMD_WSCNPC_STORE_ID_PASV_SLOT_TIME)) and interval ([INTERVAL](#AN_CMD_WSCNPC_STORE_ID_INTERVAL)), then start periodic passive scanning using the [+WSCNP](#AN_CMD_AT_WSCN_WSCNP) command.
+
+---
+#### Examples
+
+##### Asset Tracking
+
+Asset tracking is one application of beacon advertising and periodic passive scanning. A target asset advertises its identifier and listens for commands; a tracker asset detects target assets and delivers commands. The examples below show the exchange one stage at a time.
+
+---
+A target asset advertises its location by beaconing its asset identifier:
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=1,0</strong></td>
+<td>Take the beacon channels from the channel mask</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=11,0x0421</strong></td>
+<td>Beacon on channels 1, 6 and 11</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=2,"ASSET35"</strong></td>
+<td>Set the beacon SSID to the asset identifier</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=7,5000</strong></td>
+<td>Send one three-channel transmission every 5 s</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=8,0</strong></td>
+<td>Keep advertising until told to stop, rather than stopping after a set count</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=1</strong></td>
+<td>Start beaconing</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td><code>..</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=0</strong></td>
+<td>Request that beaconing stops</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td>The request is accepted; the run is not over yet</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WBCN_WBCNDONE">+WBCNDONE</a>:37</strong></td>
+<td>The run is over: 37 beacons transmitted per channel</td>
+</tr>
+</tbody>
+</table>
+
+---
+A tracker asset runs a periodic passive scan and detects the target asset:
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=1,6</strong></td>
+<td>Set the periodic scan channel to 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=3,500</strong></td>
+<td>Listen for 500 ms in each scan slot</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=4,2</strong></td>
+<td>Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=12,5000</strong></td>
+<td>Start a sweep every 5000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=6,-45</strong></td>
+<td>Discard anything weaker than -45 dBm</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=10,"ASSET\*"</strong></td>
+<td>Report only matching SSIDs, so beacons from ordinary access points are dropped</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=1</strong></td>
+<td>Enable periodic scanning, the first sweep starts immediately. All of the scan configuration must be in place by now: it is locked while scanning is enabled</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-30,0,6,"F8:F0:05:12:34:56","ASSET35"</strong></td>
+<td>A matching beacon is detected on channel 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:1</strong></td>
+<td>Sweep completed, 1 result found</td>
+</tr>
+<tr>
+<td></td>
+<td><code>..</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:0</strong></td>
+<td>A later sweep found no matching beacons</td>
+</tr>
+<tr>
+<td></td>
+<td><code>..</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=0</strong></td>
+<td>Stop periodic scanning</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNPDONE">+WSCNPDONE</a>:12</strong></td>
+<td>The run is over: 12 sweeps were carried out</td>
+</tr>
+</tbody>
+</table>
+
+---
+A tracker asset delivers an encoded command to a target asset by beaconing the command payload:
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=1,6</strong></td>
+<td>Set the beacon channel to 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=2,"CMD3240138012398502495190247597"</strong></td>
+<td>Set the beacon SSID to the encrypted command payload</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=7,1000</strong></td>
+<td>Repeat the command every 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=8,0</strong></td>
+<td>Repeat until told to stop, rather than a set number of times: the target only listens for part of each of its scan intervals, so a single transmission is easily missed</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=1</strong></td>
+<td>Start transmitting the beacons carrying the command</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td><code>..</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=0</strong></td>
+<td>Stop repeating the command, the target’s response having been received</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td>The request is accepted; the run is not over yet</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WBCN_WBCNDONE">+WBCNDONE</a>:12</strong></td>
+<td>The run is over: 12 beacons transmitted</td>
+</tr>
+</tbody>
+</table>
+
+---
+The target asset runs a periodic passive scan and receives the command:
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=1,6</strong></td>
+<td>Set the periodic scan channel to 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=3,500</strong></td>
+<td>Listen for 500 ms in each scan slot</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=4,2</strong></td>
+<td>Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=12,5000</strong></td>
+<td>Start a sweep every 5000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=6,-45</strong></td>
+<td>Discard anything weaker than -45 dBm</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=10,"CMD\*"</strong></td>
+<td>Report only SSIDs carrying command payloads</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=1</strong></td>
+<td>Enable periodic scanning, the first sweep starts immediately. All of the scan configuration must be in place by now: it is locked while scanning is enabled</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:0</strong></td>
+<td>A sweep which found no matching beacon</td>
+</tr>
+<tr>
+<td></td>
+<td><code>..</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-30,0,6,"F8:F0:05:AB:CD:EF","CMD3240138012398502495190247597"</strong></td>
+<td>Matching SSID payload received</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:1</strong></td>
+<td>Sweep completed, 1 result found</td>
+</tr>
+<tr>
+<td></td>
+<td><code>..</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=0</strong></td>
+<td>Stop periodic scanning</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNPDONE">+WSCNPDONE</a>:8</strong></td>
+<td>The run is over: 8 sweeps were carried out</td>
+</tr>
+</tbody>
+</table>
+
+The two examples below then show each role’s complete exchange, from the two sides of the same conversation.
+
+---
+The target asset advertises and listens at the same time, answers a command, and resumes advertising:
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=1,6</strong></td>
+<td>Set the beacon channel to 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=2,"ASSET35"</strong></td>
+<td>Set the beacon SSID to the asset identifier</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=7,1000</strong></td>
+<td>Advertise once every 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=8,0</strong></td>
+<td>Keep advertising until told to stop, rather than stopping after a set count</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=1,6</strong></td>
+<td>Listen for commands on the beacon channel</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=3,500</strong></td>
+<td>Listen for 500 ms in each scan slot</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=4,2</strong></td>
+<td>Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=12,5000</strong></td>
+<td>Start a sweep every 5000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=6,-45</strong></td>
+<td>Discard anything weaker than -45 dBm: a tracker asset that distant could not hear the response either</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=10,"CMD\*"</strong></td>
+<td>Report only command payloads, so beacons carrying anything else are dropped</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=1</strong></td>
+<td>Start advertising. No connection is needed: the whole exchange runs in the disconnected state</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=1</strong></td>
+<td>Start listening for commands, the first sweep starts immediately</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:0</strong></td>
+<td>A sweep which overlapped no command beacon</td>
+</tr>
+<tr>
+<td></td>
+<td><code>…​</code></td>
+<td>Advertise and listen until a command arrives. An advertisement which comes due while a sweep holds the radio waits and is sent once the sweep ends, rather than being skipped</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-30,0,6,"F8:F0:05:AB:CD:EF","CMD3240138012398502495190247597"</strong></td>
+<td>A command has arrived from the tracker asset</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:1</strong></td>
+<td>Sweep completed, 1 result found</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=0</strong></td>
+<td>Stop advertising: the beacon configuration is locked while a run is in progress, so the response cannot be loaded until the advertising run has ended</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td>The request is accepted; the run is not over yet</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WBCN_WBCNDONE">+WBCNDONE</a>:75</strong></td>
+<td>The advertising run is over: all 75 beacons were confirmed transmitted, some delayed while a scan sweep held the radio</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=2,"RSP7620045118820394471029384756"</strong></td>
+<td>Set the beacon SSID to the encoded response payload</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=8,10</strong></td>
+<td>Send the response 10 times: the tracker only listens for part of each of its scan intervals, so a single transmission is easily missed</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=1</strong></td>
+<td>Transmit the beacons carrying the response</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WBCN_WBCNDONE">+WBCNDONE</a>:10</strong></td>
+<td>The response run is over: all 10 beacons were transmitted</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=2,"ASSET35"</strong></td>
+<td>Restore the asset identifier</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=8,0</strong></td>
+<td>Advertise continuously again</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=1</strong></td>
+<td>Resume advertising, the periodic scan having listened for the next command throughout</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+---
+The tracker asset connects, discovers the target asset, commands it and collects the response:
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTAC">+WSTAC</a>=1,"MyAP"</strong></td>
+<td>Specify SSID of the Access Point to report findings over</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTAC">+WSTAC</a>=2,3</strong></td>
+<td>Set security type to WPA2-Personal</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTAC">+WSTAC</a>=3,"MyAPPSK"</strong></td>
+<td>Set WPA2 Personal passphrase for connecting to the Access Point</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTA">+WSTA</a>=1</strong></td>
+<td>Connect</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTALU">+WSTALU</a>:1,"00:01:02:03:04:05",6</strong></td>
+<td>Link up: connected on channel 6 to an AP with BSSID 00:01:02:03:04:05</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTAAIP">+WSTAAIP</a>:1,"192.168.0.20"</strong></td>
+<td>IP address received via auto configuration (DHCP/SLAAC)</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=1,6</strong></td>
+<td>Set the periodic scan channel to 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=3,500</strong></td>
+<td>Listen for 500 ms in each scan slot</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=4,2</strong></td>
+<td>Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=12,5000</strong></td>
+<td>Start a sweep every 5000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=6,-45</strong></td>
+<td>Discard anything weaker than -45 dBm: a target asset that distant could not hear a command either</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=10,"ASSET\*"</strong></td>
+<td>Add a filter for the advertisements of target assets</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=10,"RSP\*"</strong></td>
+<td>Add a second filter for the responses they send back. Both filters must be in place before scanning starts, because the scan configuration is locked while it runs</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=1</strong></td>
+<td>Enable periodic scanning, the first sweep starts immediately</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:0</strong></td>
+<td>A sweep which found no target asset</td>
+</tr>
+<tr>
+<td></td>
+<td><code>…​</code></td>
+<td>Sweep every 5000 ms until a target asset comes into range</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-30,0,6,"F8:F0:05:12:34:56","ASSET35"</strong></td>
+<td>Target asset ASSET35 is in range</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:1</strong></td>
+<td>Sweep completed, 1 result found</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=1,6</strong></td>
+<td>Set the beacon channel to 6, the channel the target asset listens on</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=2,"CMD3240138012398502495190247597"</strong></td>
+<td>Set the beacon SSID to the encrypted command payload</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=7,1000</strong></td>
+<td>Repeat the command every 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=8,0</strong></td>
+<td>Repeat until told to stop, rather than a set number of times: the target only listens for part of each of its scan intervals, so a single transmission is easily missed</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=1</strong></td>
+<td>Start transmitting the command. Beaconing and periodic scanning run together: a beacon which comes due while a sweep holds the radio waits and is sent once the sweep ends</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-30,0,6,"F8:F0:05:12:34:56","ASSET35"</strong></td>
+<td>A sweep which saw the advertisement again, but no response yet</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:1</strong></td>
+<td>Sweep completed, 1 result found</td>
+</tr>
+<tr>
+<td></td>
+<td><code>…​</code></td>
+<td>Repeat the command, and keep sweeping, until the target asset answers</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-30,0,6,"F8:F0:05:12:34:56","RSP7620045118820394471029384756"</strong></td>
+<td>The target asset has answered; it stops advertising its identifier while it sends the response</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:1</strong></td>
+<td>Sweep completed, 1 result found</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=0</strong></td>
+<td>The response has been received, so stop repeating the command</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td>The request is accepted; the run is not over yet</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WBCN_WBCNDONE">+WBCNDONE</a>:15</strong></td>
+<td>The run is over: all 15 beacons carrying the command were confirmed transmitted, some delayed while one of this asset’s own scan sweeps held the radio</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=0</strong></td>
+<td>Stop watching for target assets</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNPDONE">+WSCNPDONE</a>:19,0</strong></td>
+<td>The run is over: 19 sweeps were started and none were skipped</td>
+</tr>
+</tbody>
+</table>
+
+### Command Reference:
+
+<a id="AN_CMD_AT_WBCN_WBCNC"></a>
+#### +WBCNC
+
+##### Description
+
+This command is used to modify or query the behavior of the beacon function.
+
+This command is a configuration command which supports setting and getting parameter values. The behaviour of configuration commands is described in general in the [Configuration Commands](#_configuration_commands) section.
+
+**Security**
+
+**Default [security](#_security_model) for the command is: `GGGG`**
+
+<table>
+<caption>Command Syntax</caption>
+<colgroup>
+<col style="width: 66%" />
+<col style="width: 28%" />
+<col style="width: 5%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Command</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;"><a href="#_security_model">Sec</a></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>AT+WBCNC</p></td>
+<td style="text-align: left;"><p>Query all configuration elements<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>AT+WBCNC=&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>Query a single element<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>AT+WBCNC=&lt;ID&gt;,&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Set a single element<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+</tbody>
+</table>
+
+<table>
+<caption>Command Parameter Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+<br />
+Unsigned 8-bit value<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+String<br />
+Byte Array<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+| Response              | Description   |
+|-----------------------|---------------|
+| +WBCNC:\<ID\>,\<VAL\> | Read response |
+
+**Response Syntax**
+
+<table>
+<caption>Response Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Any</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+<table>
+<caption>Configuration Parameters</caption>
+<colgroup>
+<col style="width: 4%" />
+<col style="width: 28%" />
+<col style="width: 14%" />
+<col style="width: 46%" />
+<col style="width: 5%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">ID</th>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;"><a href="#_security_model">Sec</a></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>&lt;PRESET&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Configuration preset<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>Default.</p></td>
+</tr>
+</tbody>
+</table></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WBCNC_STORE_ID_CHANNEL"></span> 1</p></td>
+<td style="text-align: left;"><p>&lt;CHANNEL&gt;</p></td>
+<td style="text-align: left;"><p>Unsigned Integer<br />
+</p></td>
+<td style="text-align: left;"><p>The channel to send the beacon on (or 0 to use CHANMASK24)<br />
+<br />
+Valid range is 0 to 13<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WBCNC_STORE_ID_SSID"></span> 2</p></td>
+<td style="text-align: left;"><p>&lt;SSID&gt;</p></td>
+<td style="text-align: left;"><p>String<br />
+</p></td>
+<td style="text-align: left;"><p>The SSID advertised in the beacon<br />
+Maximum length of string is 32<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WBCNC_STORE_ID_INTERVAL"></span> 7</p></td>
+<td style="text-align: left;"><p>&lt;INTERVAL&gt;</p></td>
+<td style="text-align: left;"><p>Unsigned Integer<br />
+</p></td>
+<td style="text-align: left;"><p>The interval between beacon transmissions, in milliseconds<br />
+<br />
+Valid range is 100 to 600000<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WBCNC_STORE_ID_NUM_BEACONS"></span> 8</p></td>
+<td style="text-align: left;"><p>&lt;NUM_BEACONS&gt;</p></td>
+<td style="text-align: left;"><p>Unsigned Integer<br />
+</p></td>
+<td style="text-align: left;"><p>The number of beacons to send per channel; 0 to send continuously until a stop request<br />
+<br />
+Unsigned 16-bit value<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_CMD_WBCNC_STORE_ID_CHANMASK24"></span> 11</p></td>
+<td style="text-align: left;"><p>&lt;CHANMASK24&gt;</p></td>
+<td style="text-align: left;"><p>Unsigned Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Beacon channel mask (2.4 GHz), used when CHANNEL is 0<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: center;"><p><sup>15</sup><br />
+-</p></td>
+<td style="text-align: center;"><p><sup>14</sup><br />
+-</p></td>
+<td style="text-align: center;"><p><sup>13</sup><br />
+CH14</p></td>
+<td style="text-align: center;"><p><sup>12</sup><br />
+CH13</p></td>
+<td style="text-align: center;"><p><sup>11</sup><br />
+CH12</p></td>
+<td style="text-align: center;"><p><sup>10</sup><br />
+CH11</p></td>
+<td style="text-align: center;"><p><sup>9</sup><br />
+CH10</p></td>
+<td style="text-align: center;"><p><sup>8</sup><br />
+CH9</p></td>
+</tr>
+<tr>
+<td style="text-align: center;"><p><sup>7</sup><br />
+CH8</p></td>
+<td style="text-align: center;"><p><sup>6</sup><br />
+CH7</p></td>
+<td style="text-align: center;"><p><sup>5</sup><br />
+CH6</p></td>
+<td style="text-align: center;"><p><sup>4</sup><br />
+CH5</p></td>
+<td style="text-align: center;"><p><sup>3</sup><br />
+CH4</p></td>
+<td style="text-align: center;"><p><sup>2</sup><br />
+CH3</p></td>
+<td style="text-align: center;"><p><sup>1</sup><br />
+CH2</p></td>
+<td style="text-align: center;"><p><sup>0</sup><br />
+CH1</p></td>
+</tr>
+</tbody>
+</table>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0x0001</p></td>
+<td style="text-align: left;"><p>CH1</p></td>
+<td style="text-align: left;"><p>Channel 1 - 2412 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0002</p></td>
+<td style="text-align: left;"><p>CH2</p></td>
+<td style="text-align: left;"><p>Channel 2 - 2417 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0004</p></td>
+<td style="text-align: left;"><p>CH3</p></td>
+<td style="text-align: left;"><p>Channel 3 - 2422 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0008</p></td>
+<td style="text-align: left;"><p>CH4</p></td>
+<td style="text-align: left;"><p>Channel 4 - 2427 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0010</p></td>
+<td style="text-align: left;"><p>CH5</p></td>
+<td style="text-align: left;"><p>Channel 5 - 2432 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0020</p></td>
+<td style="text-align: left;"><p>CH6</p></td>
+<td style="text-align: left;"><p>Channel 6 - 2437 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0040</p></td>
+<td style="text-align: left;"><p>CH7</p></td>
+<td style="text-align: left;"><p>Channel 7 - 2442 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0080</p></td>
+<td style="text-align: left;"><p>CH8</p></td>
+<td style="text-align: left;"><p>Channel 8 - 2447 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0100</p></td>
+<td style="text-align: left;"><p>CH9</p></td>
+<td style="text-align: left;"><p>Channel 9 - 2452 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0200</p></td>
+<td style="text-align: left;"><p>CH10</p></td>
+<td style="text-align: left;"><p>Channel 10 - 2457 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0400</p></td>
+<td style="text-align: left;"><p>CH11</p></td>
+<td style="text-align: left;"><p>Channel 11 - 2462 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0800</p></td>
+<td style="text-align: left;"><p>CH12</p></td>
+<td style="text-align: left;"><p>Channel 12 - 2467 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x1000</p></td>
+<td style="text-align: left;"><p>CH13</p></td>
+<td style="text-align: left;"><p>Channel 13 - 2472 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x2000</p></td>
+<td style="text-align: left;"><p>CH14</p></td>
+<td style="text-align: left;"><p>Channel 14 - 2485 MHz.</p></td>
+</tr>
+</tbody>
+</table></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+</tbody>
+</table>
+
+---
+<a id="AN_CMD_AT_WBCN_WBCN"></a>
+#### +WBCN
+
+##### Description
+
+This command is used to start or stop periodic beacon transmission. Exactly one of +WBCNDONE or +WBCNERR closes out every accepted start request. A stop request only requests the stop: its OK does not mark the end of the run, the +WBCNDONE which follows it does.
+
+**Security**
+
+**Default [security](#_security_model) for the command is: `GGGG`**
+
+<table>
+<caption>Command Syntax</caption>
+<colgroup>
+<col style="width: 66%" />
+<col style="width: 28%" />
+<col style="width: 5%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Command</th>
+<th style="text-align: left;">Description</th>
+<th style="text-align: left;"><a href="#_security_model">Sec</a></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>AT+WBCN</p></td>
+<td style="text-align: left;"><p>Query state of the beacon function<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>AT+WBCN=&lt;STATE&gt;</p></td>
+<td style="text-align: left;"><p>Set state of the beacon function<br />
+</p></td>
+<td style="text-align: left;"><p><code>GGGG</code></p></td>
+</tr>
+</tbody>
+</table>
+
+<table>
+<caption>Command Parameter Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Parameter Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;STATE&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>State of the beacon function<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>Disable.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>Enable.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+</tbody>
+</table>
+
+| Response        | Description |
+|-----------------|-------------|
+| +WBCN:\<STATE\> | Query state |
+
+**Response Syntax**
+
+<table>
+<caption>Response Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;STATE&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>State of the beacon function<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 85%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>Disabled.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>Enabled.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+</tbody>
+</table>
+
+---
+### AEC Reference:
+
+<a id="AN_AEC_AT_WBCN_WBCNDONE"></a>
+#### +WBCNDONE
+
+##### Description
+
+**Beacon transmission completed.**
+
+| AEC                    | Description        |
+|------------------------|--------------------|
+| +WBCNDONE:\<NUM_SENT\> | Beaconing complete |
+
+**AEC Syntax**
+
+<table>
+<caption>AEC Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;NUM_SENT&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Number of beacon transmitted. Each transmission covers every channel selected by CHANNEL/CHANMASK24, so this counts channel sets aired, not individual frames. A value below the configured NUM_BEACONS means the run was cut short by a stop request, or that a transmission could not be made<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+---
+<a id="AN_AEC_AT_WBCN_WBCNERR"></a>
+#### +WBCNERR
+
+##### Description
+
+**Beacon run abandoned because the driver rejected a transmit request.**
+
+| AEC                     | Description         |
+|-------------------------|---------------------|
+| +WBCNERR:\<ERROR_CODE\> | Beaconing abandoned |
+
+**AEC Syntax**
+
+<table>
+<caption>AEC Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ERROR_CODE&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Error code<br />
+</p>
+<p>See <a href="#_status_response_codes">Status Response Codes</a></p></td>
+</tr>
+</tbody>
+</table>
+
+---
+### Examples:
+
+Target asset: advertise its location
+<a id="EXAMPLE_WBCN_TARGET_ADVERTISE"></a>
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=1,0</strong></td>
+<td>Take the beacon channels from the channel mask</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=11,0x0421</strong></td>
+<td>Beacon on channels 1, 6 and 11</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=2,"ASSET35"</strong></td>
+<td>Set the beacon SSID to the asset identifier</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=7,5000</strong></td>
+<td>Send one three-channel transmission every 5 s</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=8,0</strong></td>
+<td>Keep advertising until told to stop, rather than stopping after a set count</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=1</strong></td>
+<td>Start beaconing</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td><code>..</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=0</strong></td>
+<td>Request that beaconing stops</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td>The request is accepted; the run is not over yet</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WBCN_WBCNDONE">+WBCNDONE</a>:37</strong></td>
+<td>The run is over: 37 beacons transmitted per channel</td>
+</tr>
+</tbody>
+</table>
+
+Tracker asset: send a command to a target asset
+<a id="EXAMPLE_WBCN_TRACKER_COMMAND"></a>
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=1,6</strong></td>
+<td>Set the beacon channel to 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=2,"CMD3240138012398502495190247597"</strong></td>
+<td>Set the beacon SSID to the encrypted command payload</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=7,1000</strong></td>
+<td>Repeat the command every 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=8,0</strong></td>
+<td>Repeat until told to stop, rather than a set number of times: the target only listens for part of each of its scan intervals, so a single transmission is easily missed</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=1</strong></td>
+<td>Start transmitting the beacons carrying the command</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td></td>
+<td><code>..</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=0</strong></td>
+<td>Stop repeating the command, the target’s response having been received</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td>The request is accepted; the run is not over yet</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WBCN_WBCNDONE">+WBCNDONE</a>:12</strong></td>
+<td>The run is over: 12 beacons transmitted</td>
+</tr>
+</tbody>
+</table>
+
+Target asset: a complete exchange with a tracker asset
+<a id="EXAMPLE_WBCN_TARGET_FULL"></a>
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=1,6</strong></td>
+<td>Set the beacon channel to 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=2,"ASSET35"</strong></td>
+<td>Set the beacon SSID to the asset identifier</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=7,1000</strong></td>
+<td>Advertise once every 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=8,0</strong></td>
+<td>Keep advertising until told to stop, rather than stopping after a set count</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=1,6</strong></td>
+<td>Listen for commands on the beacon channel</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=3,500</strong></td>
+<td>Listen for 500 ms in each scan slot</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=4,2</strong></td>
+<td>Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=12,5000</strong></td>
+<td>Start a sweep every 5000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=6,-45</strong></td>
+<td>Discard anything weaker than -45 dBm: a tracker asset that distant could not hear the response either</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=10,"CMD\*"</strong></td>
+<td>Report only command payloads, so beacons carrying anything else are dropped</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=1</strong></td>
+<td>Start advertising. No connection is needed: the whole exchange runs in the disconnected state</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=1</strong></td>
+<td>Start listening for commands, the first sweep starts immediately</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:0</strong></td>
+<td>A sweep which overlapped no command beacon</td>
+</tr>
+<tr>
+<td></td>
+<td><code>…​</code></td>
+<td>Advertise and listen until a command arrives. An advertisement which comes due while a sweep holds the radio waits and is sent once the sweep ends, rather than being skipped</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-30,0,6,"F8:F0:05:AB:CD:EF","CMD3240138012398502495190247597"</strong></td>
+<td>A command has arrived from the tracker asset</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:1</strong></td>
+<td>Sweep completed, 1 result found</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=0</strong></td>
+<td>Stop advertising: the beacon configuration is locked while a run is in progress, so the response cannot be loaded until the advertising run has ended</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td>The request is accepted; the run is not over yet</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WBCN_WBCNDONE">+WBCNDONE</a>:75</strong></td>
+<td>The advertising run is over: all 75 beacons were confirmed transmitted, some delayed while a scan sweep held the radio</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=2,"RSP7620045118820394471029384756"</strong></td>
+<td>Set the beacon SSID to the encoded response payload</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=8,10</strong></td>
+<td>Send the response 10 times: the tracker only listens for part of each of its scan intervals, so a single transmission is easily missed</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=1</strong></td>
+<td>Transmit the beacons carrying the response</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WBCN_WBCNDONE">+WBCNDONE</a>:10</strong></td>
+<td>The response run is over: all 10 beacons were transmitted</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=2,"ASSET35"</strong></td>
+<td>Restore the asset identifier</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=8,0</strong></td>
+<td>Advertise continuously again</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=1</strong></td>
+<td>Resume advertising, the periodic scan having listened for the next command throughout</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+Tracker asset: a complete exchange with a target asset
+<a id="EXAMPLE_WBCN_TRACKER_FULL"></a>
+
+<table>
+<tbody>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTAC">+WSTAC</a>=1,"MyAP"</strong></td>
+<td>Specify SSID of the Access Point to report findings over</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTAC">+WSTAC</a>=2,3</strong></td>
+<td>Set security type to WPA2-Personal</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTAC">+WSTAC</a>=3,"MyAPPSK"</strong></td>
+<td>Set WPA2 Personal passphrase for connecting to the Access Point</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSTA_WSTA">+WSTA</a>=1</strong></td>
+<td>Connect</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTALU">+WSTALU</a>:1,"00:01:02:03:04:05",6</strong></td>
+<td>Link up: connected on channel 6 to an AP with BSSID 00:01:02:03:04:05</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSTA_WSTAAIP">+WSTAAIP</a>:1,"192.168.0.20"</strong></td>
+<td>IP address received via auto configuration (DHCP/SLAAC)</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=1,6</strong></td>
+<td>Set the periodic scan channel to 6</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=3,500</strong></td>
+<td>Listen for 500 ms in each scan slot</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=4,2</strong></td>
+<td>Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=12,5000</strong></td>
+<td>Start a sweep every 5000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=6,-45</strong></td>
+<td>Discard anything weaker than -45 dBm: a target asset that distant could not hear a command either</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=10,"ASSET\*"</strong></td>
+<td>Add a filter for the advertisements of target assets</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNPC">+WSCNPC</a>=10,"RSP\*"</strong></td>
+<td>Add a second filter for the responses they send back. Both filters must be in place before scanning starts, because the scan configuration is locked while it runs</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=1</strong></td>
+<td>Enable periodic scanning, the first sweep starts immediately</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:0</strong></td>
+<td>A sweep which found no target asset</td>
+</tr>
+<tr>
+<td></td>
+<td><code>…​</code></td>
+<td>Sweep every 5000 ms until a target asset comes into range</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-30,0,6,"F8:F0:05:12:34:56","ASSET35"</strong></td>
+<td>Target asset ASSET35 is in range</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:1</strong></td>
+<td>Sweep completed, 1 result found</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=1,6</strong></td>
+<td>Set the beacon channel to 6, the channel the target asset listens on</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=2,"CMD3240138012398502495190247597"</strong></td>
+<td>Set the beacon SSID to the encrypted command payload</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=7,1000</strong></td>
+<td>Repeat the command every 1000 ms</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCNC">+WBCNC</a>=8,0</strong></td>
+<td>Repeat until told to stop, rather than a set number of times: the target only listens for part of each of its scan intervals, so a single transmission is easily missed</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=1</strong></td>
+<td>Start transmitting the command. Beaconing and periodic scanning run together: a beacon which comes due while a sweep holds the radio waits and is sent once the sweep ends</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-30,0,6,"F8:F0:05:12:34:56","ASSET35"</strong></td>
+<td>A sweep which saw the advertisement again, but no response yet</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:1</strong></td>
+<td>Sweep completed, 1 result found</td>
+</tr>
+<tr>
+<td></td>
+<td><code>…​</code></td>
+<td>Repeat the command, and keep sweeping, until the target asset answers</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNIND">+WSCNIND</a>:-30,0,6,"F8:F0:05:12:34:56","RSP7620045118820394471029384756"</strong></td>
+<td>The target asset has answered; it stops advertising its identifier while it sends the response</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNDONE">+WSCNDONE</a>:1</strong></td>
+<td>Sweep completed, 1 result found</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WBCN_WBCN">+WBCN</a>=0</strong></td>
+<td>The response has been received, so stop repeating the command</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td>The request is accepted; the run is not over yet</td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WBCN_WBCNDONE">+WBCNDONE</a>:15</strong></td>
+<td>The run is over: all 15 beacons carrying the command were confirmed transmitted, some delayed while one of this asset’s own scan sweeps held the radio</td>
+</tr>
+<tr>
+<td>→</td>
+<td><strong>AT<a href="#AN_CMD_AT_WSCN_WSCNP">+WSCNP</a>=0</strong></td>
+<td>Stop watching for target assets</td>
+</tr>
+<tr>
+<td>←</td>
+<td><code>OK</code></td>
+<td></td>
+</tr>
+<tr>
+<td>←</td>
+<td><strong><a href="#AN_AEC_AT_WSCN_WSCNPDONE">+WSCNPDONE</a>:19,0</strong></td>
+<td>The run is over: 19 sweeps were started and none were skipped</td>
+</tr>
+</tbody>
+</table>
+
+---
 ## List of Examples
 
 <table>
@@ -26213,6 +31771,10 @@ HTTP basic authentication using additional request headers
 <tr>
 <td></td>
 <td><a href="#EXAMPLE_52043c5b1266965e87fee1d62cf0473db94a8a9f">Restoring configuration from storage</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_CFG_PARTIAL">Storing a partial configuration</a></td>
 </tr>
 <tr>
 <td>DNS</td>
@@ -26364,7 +31926,7 @@ HTTP basic authentication using additional request headers
 </tr>
 <tr>
 <td></td>
-<td><a href="#EXAMPLE_12de0326b22680d3b9cc3d612dba34e5f4d023fe">Open a TLS client socket with AT+SOCK</a></td>
+<td><a href="#EXAMPLE_b727ea9918f20ca000a04c56d63af4f37dafd8a6">Open a TLS client socket</a></td>
 </tr>
 <tr>
 <td></td>
@@ -26372,7 +31934,7 @@ HTTP basic authentication using additional request headers
 </tr>
 <tr>
 <td></td>
-<td><a href="#EXAMPLE_a70e12e9f2deb08dda4c674bca8584fd9c59e257">Open a TLS server socket with AT+SOCK</a></td>
+<td><a href="#EXAMPLE_2768fe54a6516136aa956658c21d99e275b3d9d0">Open a TLS server socket</a></td>
 </tr>
 <tr>
 <td></td>
@@ -26391,6 +31953,18 @@ HTTP basic authentication using additional request headers
 <td><a href="#EXAMPLE_286d6c7f74c01a7bacc3d6fcaa240ad067b1f736">Setting SSID filter with +WSCNC</a></td>
 </tr>
 <tr>
+<td></td>
+<td><a href="#EXAMPLE_8b708174983f8fc67c0f6d84e73ff4686d515be3">Setting SSID prefix filters with +WSCNC</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WSCNP_PREFIX_FILTER">Periodic passive scanning with an SSID prefix filter</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WSCNP_PAYLOAD_FILTER">Periodic passive scanning with an SSID prefix filter</a></td>
+</tr>
+<tr>
 <td>WSTA</td>
 <td><a href="#EXAMPLE_WSTA_PERSONAL">WPA Personal: Configure STA connection parameters</a></td>
 </tr>
@@ -26401,6 +31975,10 @@ HTTP basic authentication using additional request headers
 <tr>
 <td></td>
 <td><a href="#EXAMPLE_WSTA_RECONNECT">Some disconnections, reconnections and roaming</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WSTA_BLOCKED_BY_SCAN">+WSTA refused while a scan or periodic</a></td>
 </tr>
 <tr>
 <td></td>
@@ -26439,6 +32017,14 @@ HTTP basic authentication using additional request headers
 <td><a href="#EXAMPLE_c37bae967b299185b054858a003c7507e0b388a9">+WIFIC coexistence settings for 3-wire PTA interface</a></td>
 </tr>
 <tr>
+<td></td>
+<td><a href="#EXAMPLE_WIFI_VSIE_TX">Configure vendor-specific information elements for transmission</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WIFI_VSIE_RX">Configure vendor-specific information element reception</a></td>
+</tr>
+<tr>
 <td>NVM</td>
 <td><a href="#EXAMPLE_NVM_EXAMPLE">Simple example of NVM usage</a></td>
 </tr>
@@ -26473,6 +32059,22 @@ HTTP basic authentication using additional request headers
 <tr>
 <td></td>
 <td><a href="#EXAMPLE_HTTP_5">HTTP basic authentication using additional request headers</a></td>
+</tr>
+<tr>
+<td>WBCN</td>
+<td><a href="#EXAMPLE_WBCN_TARGET_ADVERTISE">Target asset: advertise its location</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WBCN_TRACKER_COMMAND">Tracker asset: send a command to a target asset</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WBCN_TARGET_FULL">Target asset: a complete exchange with a tracker asset</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WBCN_TRACKER_FULL">Tracker asset: a complete exchange with a target asset</a></td>
 </tr>
 </tbody>
 </table>

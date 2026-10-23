@@ -80,6 +80,8 @@ static const WINC_STRING_ID_TABLE_TYPE wincCmdIdTable[WINC_CMD_ID_TABLE_SZ+1U] =
     {.id = WINC_CMD_ID_WAP, .length = 4, .pName = "+WAP"},
     {.id = WINC_CMD_ID_WSCNC, .length = 6, .pName = "+WSCNC"},
     {.id = WINC_CMD_ID_WSCN, .length = 5, .pName = "+WSCN"},
+    {.id = WINC_CMD_ID_WSCNPC, .length = 7, .pName = "+WSCNPC"},
+    {.id = WINC_CMD_ID_WSCNP, .length = 6, .pName = "+WSCNP"},
     {.id = WINC_CMD_ID_WSTAC, .length = 6, .pName = "+WSTAC"},
     {.id = WINC_CMD_ID_WSTA, .length = 5, .pName = "+WSTA"},
     {.id = WINC_CMD_ID_ASSOC, .length = 6, .pName = "+ASSOC"},
@@ -104,6 +106,8 @@ static const WINC_STRING_ID_TABLE_TYPE wincCmdIdTable[WINC_CMD_ID_TABLE_SZ+1U] =
     {.id = WINC_CMD_ID_HTTPGET, .length = 8, .pName = "+HTTPGET"},
     {.id = WINC_CMD_ID_HTTPRD, .length = 7, .pName = "+HTTPRD"},
     {.id = WINC_CMD_ID_HTTPCL, .length = 7, .pName = "+HTTPCL"},
+    {.id = WINC_CMD_ID_WBCNC, .length = 6, .pName = "+WBCNC"},
+    {.id = WINC_CMD_ID_WBCN, .length = 5, .pName = "+WBCN"},
     {.id = 0, .length = 0, .pName = NULL}
 };
 
@@ -121,6 +125,8 @@ static const WINC_STRING_ID_TABLE_TYPE wincAecIdTable[WINC_AEC_ID_TABLE_SZ+1U] =
     {.id = WINC_AEC_ID_MQTTUNSUB, .length = 10, .pName = "+MQTTUNSUB"},
     {.id = WINC_AEC_ID_MQTTSUBRX, .length = 10, .pName = "+MQTTSUBRX"},
     {.id = WINC_AEC_ID_MQTTPROPRX, .length = 11, .pName = "+MQTTPROPRX"},
+    {.id = WINC_AEC_ID_MQTTPUBSENT, .length = 12, .pName = "+MQTTPUBSENT"},
+    {.id = WINC_AEC_ID_MQTTSUBRXERR, .length = 13, .pName = "+MQTTSUBRXERR"},
     {.id = WINC_AEC_ID_NETIFRX, .length = 8, .pName = "+NETIFRX"},
     {.id = WINC_AEC_ID_OTA, .length = 4, .pName = "+OTA"},
     {.id = WINC_AEC_ID_OTAERR, .length = 7, .pName = "+OTAERR"},
@@ -141,6 +147,8 @@ static const WINC_STRING_ID_TABLE_TYPE wincAecIdTable[WINC_AEC_ID_TABLE_SZ+1U] =
     {.id = WINC_AEC_ID_WAPERR, .length = 7, .pName = "+WAPERR"},
     {.id = WINC_AEC_ID_WSCNIND, .length = 8, .pName = "+WSCNIND"},
     {.id = WINC_AEC_ID_WSCNDONE, .length = 9, .pName = "+WSCNDONE"},
+    {.id = WINC_AEC_ID_WSCNPDONE, .length = 10, .pName = "+WSCNPDONE"},
+    {.id = WINC_AEC_ID_WSCNPERR, .length = 9, .pName = "+WSCNPERR"},
     {.id = WINC_AEC_ID_WSTAAIP, .length = 8, .pName = "+WSTAAIP"},
     {.id = WINC_AEC_ID_WSTALD, .length = 7, .pName = "+WSTALD"},
     {.id = WINC_AEC_ID_WSTAERR, .length = 8, .pName = "+WSTAERR"},
@@ -156,6 +164,7 @@ static const WINC_STRING_ID_TABLE_TYPE wincAecIdTable[WINC_AEC_ID_TABLE_SZ+1U] =
     {.id = WINC_AEC_ID_WPROVAT, .length = 8, .pName = "+WPROVAT"},
     {.id = WINC_AEC_ID_WPROVDT, .length = 8, .pName = "+WPROVDT"},
     {.id = WINC_AEC_ID_EXTCRYPTO, .length = 10, .pName = "+EXTCRYPTO"},
+    {.id = WINC_AEC_ID_WIFIVSIERX, .length = 11, .pName = "+WIFIVSIERX"},
     {.id = WINC_AEC_ID_NVMER, .length = 6, .pName = "+NVMER"},
     {.id = WINC_AEC_ID_NVMCHK, .length = 7, .pName = "+NVMCHK"},
     {.id = WINC_AEC_ID_NVMERR, .length = 7, .pName = "+NVMERR"},
@@ -167,6 +176,8 @@ static const WINC_STRING_ID_TABLE_TYPE wincAecIdTable[WINC_AEC_ID_TABLE_SZ+1U] =
     {.id = WINC_AEC_ID_HTTPBODYEND, .length = 12, .pName = "+HTTPBODYEND"},
     {.id = WINC_AEC_ID_HTTPCL, .length = 7, .pName = "+HTTPCL"},
     {.id = WINC_AEC_ID_HTTPERR, .length = 8, .pName = "+HTTPERR"},
+    {.id = WINC_AEC_ID_WBCNDONE, .length = 9, .pName = "+WBCNDONE"},
+    {.id = WINC_AEC_ID_WBCNERR, .length = 8, .pName = "+WBCNERR"},
     {.id = 0, .length = 0, .pName = NULL}
 };
 
@@ -212,7 +223,7 @@ static const WINC_STRING_ID_TABLE_TYPE wincStatusIdTable[WINC_STATUS_ID_TABLE_SZ
     {.id = WINC_STATUS_OTA_NO_STA_CONN, .length = 17, .pName = "No STA Connection"},
     {.id = WINC_STATUS_OTA_PROTOCOL_ERROR, .length = 14, .pName = "Protocol Error"},
     {.id = WINC_STATUS_OTA_TLS_ERROR, .length = 9, .pName = "TLS Error"},
-    {.id = WINC_STATUS_OTA_IMG_TOO_LARGE, .length = 13, .pName = "Image Exceeds"},
+    {.id = WINC_STATUS_OTA_IMG_TOO_LARGE, .length = 15, .pName = "Image Too Large"},
     {.id = WINC_STATUS_OTA_TIMEOUT, .length = 7, .pName = "Timeout"},
     {.id = WINC_STATUS_OTA_VERIFY_FAILED, .length = 19, .pName = "Image Verify Failed"},
     {.id = WINC_STATUS_PING_FAILED, .length = 11, .pName = "Ping Failed"},
@@ -242,7 +253,13 @@ static const WINC_STRING_ID_TABLE_TYPE wincStatusIdTable[WINC_STATUS_ID_TABLE_SZ
     {.id = WINC_STATUS_WAP_STOP_FAILED, .length = 19, .pName = "Soft AP Stop Failed"},
     {.id = WINC_STATUS_WAP_START_REFUSED, .length = 27, .pName = "Soft AP Start Not Permitted"},
     {.id = WINC_STATUS_WAP_START_FAILED, .length = 20, .pName = "Soft AP Start Failed"},
-    {.id = WINC_STATUS_UNSUPPORTTED_SEC_TYPE, .length = 25, .pName = "Unsupported Security Type"},
+    {.id = WINC_STATUS_UNSUPPORTED_SEC_TYPE, .length = 25, .pName = "Unsupported Security Type"},
+    {.id = WINC_STATUS_WSCN_SCAN_IN_PROGRESS, .length = 16, .pName = "Scan In Progress"},
+    {.id = WINC_STATUS_WSCN_PERIODIC_SCAN_IS_RUNNING, .length = 24, .pName = "Periodic Scan is Running"},
+    {.id = WINC_STATUS_WSCN_INTERVAL_TOO_SHORT, .length = 23, .pName = "Scan Interval Too Short"},
+    {.id = WINC_STATUS_WSCN_AP_MODE_ACTIVE, .length = 14, .pName = "Soft AP Active"},
+    {.id = WINC_STATUS_WSCN_NO_CHANNELS, .length = 19, .pName = "No Channels To Scan"},
+    {.id = WINC_STATUS_WSCN_STA_TRANSITIONING, .length = 26, .pName = "STA transition In Progress"},
     {.id = WINC_STATUS_STA_DISCONN_REFUSED, .length = 28, .pName = "STA Disconnect Not Permitted"},
     {.id = WINC_STATUS_STA_DISCONN_FAILED, .length = 21, .pName = "STA Disconnect Failed"},
     {.id = WINC_STATUS_STA_CONN_REFUSED, .length = 28, .pName = "STA Connection Not Permitted"},
@@ -263,11 +280,17 @@ static const WINC_STRING_ID_TABLE_TYPE wincStatusIdTable[WINC_STATUS_ID_TABLE_SZ
     {.id = WINC_STATUS_HTTP_RECV_FAILED, .length = 19, .pName = "HTTP receive failed"},
     {.id = WINC_STATUS_HTTP_SEND_FAILED, .length = 16, .pName = "HTTP send failed"},
     {.id = WINC_STATUS_HTTP_TIMEOUT, .length = 12, .pName = "HTTP timeout"},
+    {.id = WINC_STATUS_WBCN_IN_PROGRESS, .length = 21, .pName = "Beaconing In Progress"},
+    {.id = WINC_STATUS_WBCN_AP_MODE_ACTIVE, .length = 14, .pName = "Soft AP Active"},
+    {.id = WINC_STATUS_WBCN_TX_ERROR, .length = 15, .pName = "Beacon Tx Error"},
+    {.id = WINC_STATUS_WBCN_STA_TRANSITIONING, .length = 26, .pName = "STA Connection In Progress"},
+    {.id = WINC_STATUS_WBCN_NO_CHANNELS, .length = 27, .pName = "No Beacon Channels Selected"},
+    {.id = WINC_STATUS_WBCN_INTERVAL_TOO_SHORT, .length = 25, .pName = "Beacon Interval Too Short"},
     {.id = 0, .length = 0, .pName = NULL}
 };
 
 static const uint8_t wincModuleIdList[WINC_NUM_MODULES] = {
-    0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 22, 23, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34
+    0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 22, 23, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35
 };
 
 /*****************************************************************************
@@ -328,7 +351,15 @@ static uint16_t tablesLookupByString(const WINC_STRING_ID_TABLE_TYPE *pEntry, co
 
     while (NULL != pEntry->pName) {
         if (0 == strncmp(pEntry->pName, pName, pEntry->length)) {
-            return pEntry->id;
+            /* Match the whole name, not a prefix of a longer one, the name
+             must be followed by a non-alphanumeric character or the end. */
+            char nextChar = pName[pEntry->length];
+
+            if (((nextChar < 'A') || (nextChar > 'Z')) &&
+                ((nextChar < 'a') || (nextChar > 'z')) &&
+                ((nextChar < '0') || (nextChar > '9'))) {
+                return pEntry->id;
+            }
         }
 
         pEntry++;

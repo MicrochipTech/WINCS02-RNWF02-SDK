@@ -235,8 +235,8 @@ struct ipv6_mreq {
 
 /***************************** arpa/inet.h ***********************************/
 
-int inet_pton(sa_family_t af, const char *s, void *a0);
-char *inet_ntop(sa_family_t af, const void *a0, char *s, size_t l);
+int inet_pton(int af, const char *s, void *a0);
+const char *inet_ntop(int af, const void *a0, char *s, socklen_t l);
 
 /******************************* socket.h ************************************/
 
@@ -253,7 +253,6 @@ char *inet_ntop(sa_family_t af, const void *a0, char *s, size_t l);
 #define SO_RCVBUF       8
 #define SO_KEEPALIVE    9
 #define SO_LINGER       13
-#define SO_ASYNC_MODE   100
 
 #define SOMAXCONN       WINC_CMD_PARAM_MAX_SOCKET_PEND_SKTS
 
@@ -306,11 +305,17 @@ struct addrinfo {
 #define POLLHUP    0x010
 #define POLLNVAL   0x020
 
+typedef unsigned int nfds_t;
+
 struct pollfd {
     int   fd;         /* file descriptor */
     short events;     /* requested events */
     short revents;    /* returned events */
 };
+
+/***************************** netinet/tls.h *********************************/
+
+#define TLS_CONF_IDX    WINC_SO_TLS_CONF_IDX
 
 #endif /* WINC_CONF_USE_EXT_SOCK_HDRS */
 
@@ -329,13 +334,13 @@ ssize_t WINC_SOCK_NS(sendto)        (int fd, const void *buf, size_t len, int fl
 int     WINC_SOCK_NS(getaddrinfo)   (const char *host, const char *serv, const struct addrinfo *hint, struct addrinfo **res);
 void    WINC_SOCK_NS(freeaddrinfo)  (struct addrinfo *p);
 int     WINC_SOCK_NS(setsockopt)    (int fd, int level, int optname, const void *optval, socklen_t optlen);
-int     WINC_SOCK_NS(poll)          (struct pollfd *fds, int nfds, int timeout);
+int     WINC_SOCK_NS(poll)          (struct pollfd *fds, nfds_t nfds, int timeout);
 int     WINC_SOCK_NS(getsockname)   (int fd, struct sockaddr *addr, socklen_t *addrlen);
 int     WINC_SOCK_NS(getpeername)   (int fd, struct sockaddr *addr, socklen_t *addrlen);
 
 /***************************** netinet/tls.h *********************************/
 
-#define TLS_CONF_IDX    1
+#define WINC_SO_TLS_CONF_IDX                1024
 
 /*****************************************************************************/
 
@@ -348,5 +353,7 @@ typedef union sockaddr_union {
     struct sockaddr_in   in4;
     struct sockaddr_in6  in6;
 } SOCKADDR_UNION;
+
+#define SO_ASYNC_MODE   100
 
 #endif /* WINC_SOCKET_H */

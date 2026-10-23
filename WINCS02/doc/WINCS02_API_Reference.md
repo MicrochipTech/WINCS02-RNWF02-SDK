@@ -18,8 +18,8 @@ This reference manual provides information on the functions and features of the 
 </tr>
 <tr>
 <td>WINCS02</td>
-<td>3.2.0</td>
-<td>a1ac4a492</td>
+<td>3.3.0</td>
+<td>a59011f4b</td>
 </tr>
 </tbody>
 </table>
@@ -32,9 +32,21 @@ In this document, the following naming conventions are used:
 
 - App or Application: The software not described by this manual which uses the API functionality.
 
+- Device: The WINCS02 module.
+
+- Command Request: A buffer holding one or more commands, built with **WINC_CmdReqInit** and **WINC_Cmd**\* functions and sent with **WINC_DevTransmitCmdReq**.
+
+- Response: Data returned by the device for a command, delivered to the command request callback.
+
+- Status: The final result of a command, delivered as a **WINC_DEV_CMDREQ_EVENT_CMD_STATUS** event.
+
+- AEC (Asynchronous Event Code): An unsolicited message from the device, delivered to the AEC callback.
+
+- TLV (Type-Length-Value): The encoding of the parameter elements in commands, responses and AECs, see **WINC_DEV_PARAM_ELEM**.
+
 ### Driver Initialization
 
-The driver is initialized by calling **WINC_DevInit**. This function will initialize the driver state and prepare internal structures. The application must provide this function with a block of memory to act as a receive buffer for SPI operations, ideally this should be 2KBytes in size.
+The driver is initialized by calling **[WINC_DevInit](#AN_DRV_API_WINC_DEVINIT)**. This function will initialize the driver state and prepare internal structures. The application must provide this function with a block of memory to act as a receive buffer for SPI operations, ideally this should be 2KBytes in size.
 
 **WINC_DevInit** will return a **WINC_DEVICE_HANDLE** type device handle which can be used in future operations with the driver API. If initialization fails it will return a device handle value of **WINC_DEVICE_INVALID_HANDLE**.
 
@@ -53,7 +65,7 @@ wincDevHandle = WINC_DevInit(&devInitData);
 
 The driver uses an SDIO over SPI protocol to communicate with the WINCS02 device, this transport layer must be initialized before it can be used by the driver.
 
-Device initialization can take some time, therefore the transport initialization can be perform synchronously or asynchronously. In both cases the function **WINC_SDIODeviceInit** is called. This function accepts a pointer to a state variable to maintain progress state and a pointer to a **WINC_SDIO_SEND_RECEIVE_FP** type SPI function which can send/receive SPI data.
+Device initialization can take some time, therefore the transport initialization can be perform synchronously or asynchronously. In both cases the function **[WINC_SDIODeviceInit](#AN_DRV_API_WINC_SDIODEVICEINIT)** is called. This function accepts a pointer to a state variable to maintain progress state and a pointer to a **WINC_SDIO_SEND_RECEIVE_FP** type SPI function which can send/receive SPI data.
 
 **WINC_SDIODeviceInit** returns a **WINC_SDIO_STATUS_TYPE** status value indicating the result of the current operation. Negative values are fatal errors, zero represents success while positive value are ongoing states.
 
@@ -69,6 +81,7 @@ WINC_SDIO_STATUS_TYPE wincSDIOStatus;
 wincSDIOStatus = WINC_SDIODeviceInit(NULL, APP_WINC_SPISendReceive);
 ```
 
+<a id="_asynchronous_transport_initialization"></a>
 #### Asynchronous Transport Initialization
 
 To perform asynchronous initialization the application must provide a state parameter to **WINC_SDIODeviceInit**, this parameter will be updated by each call to **WINC_SDIODeviceInit**.
@@ -89,7 +102,60 @@ do
 
     delay_ms(100);
 }
-while (wincSDIOStatus > 0)
+while (wincSDIOStatus > 0);
+```
+
+<a id="_event_processing"></a>
+### Event Processing
+
+The device signals that it has data for the driver, such as command responses, status or AECs, by asserting its interrupt line (active low). The application must service the driver using three functions:
+
+- **[WINC_DevHandleEvent](#AN_DRV_API_WINC_DEVHANDLEEVENT)** reads and acknowledges a new event from the device. It must only be called when no event is in progress, otherwise it fails with **WINC_DEV_ERROR_EVENT_PENDING**. The optional **WINC_DEV_EVENT_CHECK_FP** function should return true while the interrupt line is asserted; when supplied, the driver waits for the device to release the line after the event is acknowledged.
+
+- **[WINC_DevUpdateEvent](#AN_DRV_API_WINC_DEVUPDATEEVENT)** progresses the current event. Each call processes a single message, so it must be called repeatedly while **[WINC_DevEventPending](#AN_DRV_API_WINC_DEVEVENTPENDING)** returns true; no further interrupt is raised part way through an event. Calling it with no event in progress has no effect.
+
+- **WINC_DevEventPending** returns true while an event is still being processed.
+
+The command response and AEC callbacks are invoked from within **WINC_DevUpdateEvent**, in the context of its caller.
+
+The interrupt is edge triggered. If the line is still asserted once the current event has completed then a further event is waiting and should be handled.
+
+``` c
+static volatile bool wincEventFlag = false;
+
+/* WINCS02 interrupt line (active low, falling edge) ISR */
+void APP_WINC_IntHandler(void)
+{
+    wincEventFlag = true;
+}
+
+/* Returns true while the WINCS02 interrupt line is asserted */
+static bool APP_WINC_EventCheck(void)
+{
+    return APP_WINC_IntLineAsserted();
+}
+
+void APP_Tasks(void)
+{
+    /* Only accept a new event once the current one has been fully processed */
+    if ((false == WINC_DevEventPending(wincDevHandle)) && (true == wincEventFlag))
+    {
+        wincEventFlag = false;
+
+        WINC_DevHandleEvent(wincDevHandle, APP_WINC_EventCheck);
+    }
+
+    /* Progress the current event, this may invoke the application callbacks */
+    if (false == WINC_DevUpdateEvent(wincDevHandle))
+    {
+        /* Handle error, see WINC_DevGetLastError */
+    }
+    else if ((false == WINC_DevEventPending(wincDevHandle)) && (true == APP_WINC_EventCheck()))
+    {
+        /* Interrupt still asserted with no event in progress, a new event is waiting */
+        wincEventFlag = true;
+    }
+}
 ```
 
 ---
@@ -97,14 +163,14 @@ while (wincSDIOStatus > 0)
 
 In most cases any output from the API will be in response to the receipt of a function call from the application. There are cases, however, where an asynchronous event occurs that the application will need informing of (e.g. disconnection from the network). The API uses Asynchronous Event Codes (AEC) to convey such events; AECs use the same message conventions as regular responses using a different message type to distinguish them.
 
-The application must be prepared to receive AECs at any time as it is possible for the API to send ACEs resulting from a previous function or condition while the application is calling a new API function.
+The application must be prepared to receive AECs at any time as it is possible for the API to send AECs resulting from a previous function or condition while the application is calling a new API function.
 
-AECs are delivered to the application via the message callback registered by **WINC_DevAECCallbackRegister**.
+AECs are delivered to the application via the message callback registered by **[WINC_DevAECCallbackRegister](#AN_DRV_API_WINC_DEVAECCALLBACKREGISTER)**.
 
 ---
 ### Command Functions and Responses
 
-One or more command functions are grouped into Command Requests messages which are dispatched via **WINC_DevTransmitCmdReq**. The application must provide buffer a block of memory into which the Command Request message is constructed, this memory must persist until the **WINC_DEV_CMDREQ_EVENT_STATUS_COMPLETE** event has been received via the command response callback.
+One or more command functions are grouped into Command Requests messages which are dispatched via **[WINC_DevTransmitCmdReq](#AN_DRV_API_WINC_DEVTRANSMITCMDREQ)**. The application must provide a block of memory into which the Command Request message is constructed, this memory must persist until the **WINC_DEV_CMDREQ_EVENT_STATUS_COMPLETE** event has been received via the command response callback.
 
 ``` c
 static void wincCmdRspCallback
@@ -118,7 +184,7 @@ static void wincCmdRspCallback
 {
     if (WINC_DEV_CMDREQ_EVENT_STATUS_COMPLETE == event)
     {
-        free(cmdReqHandle);
+        free((void*)cmdReqHandle);
     }
 }
 
@@ -128,21 +194,32 @@ uint8_t *pCmdReqBuffer;
 /* Allocate a command request buffer */
 pCmdReqBuffer = malloc(1024);
 
-/* Initialize a command request for three messages */
-cmdReqHandle = WINC_CmdReqInit(pCmdReqBuffer, 1024, 3, 0, wincCmdRspCallback, 0);
+/* Initialize a command request for three commands */
+cmdReqHandle = WINC_CmdReqInit(pCmdReqBuffer, 1024, 3, wincCmdRspCallback, 0);
 
-/* Add three command to the request message */
+/* Add three commands to the request */
 WINC_CmdEXAMPLE(cmdReqHandle, ARG1, ARG2);
 WINC_CmdEXAMPLE(cmdReqHandle, ARG3, ARG4);
 WINC_CmdEXAMPLE(cmdReqHandle, ARG5, ARG6);
 
-/* Queue request message to be sent to device */
-WDRV_WINC_DevTransmitCmdReq(wincDevHandle, cmdReqHandle)
+/* Queue the request to be sent to the device */
+WINC_DevTransmitCmdReq(wincDevHandle, cmdReqHandle);
 ```
 
-Command responses are received by the callback registered when the Command Request was initialized by calling **WDRV_WINC_CmdReqInit**. Responses are delivered using the event **WINC_DEV_CMDREQ_EVENT_RSP_RECEIVED**. The end of responses for a single command will be signalled by the event **WINC_DEV_CMDREQ_EVENT_CMD_STATUS** via the callback. Once the status event has been received there will be no further direct command responses.
+Command responses are received by the callback registered when the Command Request was initialized by calling **[WINC_CmdReqInit](#AN_DRV_API_WINC_CMDREQINIT)**. The callback receives the following events, in this order:
+
+- **WINC_DEV_CMDREQ_EVENT_TX_COMPLETE** when the Command Request has been sent to the device.
+
+- **WINC_DEV_CMDREQ_EVENT_RSP_RECEIVED** for each response to a command.
+
+- **WINC_DEV_CMDREQ_EVENT_CMD_STATUS** when a command has completed. Once the status event has been received there will be no further direct responses for that command.
+
+- **WINC_DEV_CMDREQ_EVENT_STATUS_COMPLETE** when all commands in the request have completed. The Command Request memory may then be released.
+
+The structure passed in *eventArg* for each event is given in [WINC_DEV_CMDREQ_EVENT_TYPE](#AN_DRV_API_WINC_DEV_CMDREQ_EVENT_TYPE).
 
 ---
+<a id="_command_responses_aecs"></a>
 ### Command Responses & AECs
 
 Command response and AEC event information is carried in a **WINC_DEV_EVENT_RSP_ELEMS** structure to either the command response callback as a **WINC_DEV_CMDREQ_EVENT_RSP_RECEIVED** event or the AEC callback.
@@ -154,7 +231,7 @@ typedef struct
     uint16_t                rspId;
     uint8_t                 numElems;
     WINC_DEV_EVENT_SRC_CMD  srcCmd;
-    WINC_DEV_PARAM_ELEM     elems[10];
+    WINC_DEV_PARAM_ELEM     elems[12];
 } WINC_DEV_EVENT_RSP_ELEMS;
 ```
 
@@ -171,7 +248,7 @@ typedef struct
 } WINC_DEV_PARAM_ELEM;
 ```
 
-The data should be extracted from these structures by calling **WINC_CmdReadParamElem**. This function will decode the received element into the user supplied storage location.
+The data should be extracted from these structures by calling **[WINC_CmdReadParamElem](#AN_DRV_API_WINC_CMDREADPARAMELEM)**. This function will decode the received element into the user supplied storage location.
 
 In addition for command responses the original command message that caused the response is provided. AECs do not provide this information.
 
@@ -186,7 +263,7 @@ typedef struct
 
 This structure indicates position index within the original command request message, the number of parameters and the location of the packed TLV data.
 
-The original command data can be unpacked for examination using the command **WINC_DevUnpackElements**. This creates an initialized list of **WINC_DEV_PARAM_ELEM** structures.
+The original command data can be unpacked for examination using the command **[WINC_DevUnpackElements](#AN_DRV_API_WINC_DEVUNPACKELEMENTS)**. This creates an initialized list of **WINC_DEV_PARAM_ELEM** structures.
 
 ``` c
 void appCmdRspCallback
@@ -200,20 +277,19 @@ void appCmdRspCallback
 {
     if (WINC_DEV_CMDREQ_EVENT_RSP_RECEIVED == event)
     {
-        const WINC_DEV_EVENT_RSP_ELEMS *const pRspElems;
+        const WINC_DEV_EVENT_RSP_ELEMS *const pRspElems = (const WINC_DEV_EVENT_RSP_ELEMS*)eventArg;
 
-        pElems = (const WINC_DEV_EVENT_RSP_ELEMS *const)eventArg;
-
-        if (NULL != pElems)
+        if (NULL != pRspElems)
         {
-            if (WINC_CMD_ID_EXAMPLE == pElems->rspId)
+            if (WINC_CMD_ID_EXAMPLE == pRspElems->rspId)
             {
                 WINC_DEV_PARAM_ELEM elems[10];
                 uint32_t elemValue;
 
-                WINC_DevUnpackElements(pElems->srcCmd.numParams, pElems->srcCmd.pParams, elems)
-
-                WINC_CmdReadParamElem(&elems[2], WINC_TYPE_INTEGER, &elemValue, sizeof(elemValue));
+                if (true == WINC_DevUnpackElements(pRspElems->srcCmd.numParams, pRspElems->srcCmd.pParams, elems))
+                {
+                    WINC_CmdReadParamElem(&elems[2], WINC_TYPE_INTEGER, &elemValue, sizeof(elemValue));
+                }
             }
         }
     }
@@ -251,7 +327,7 @@ The IPv4 element contains an IPv4 address value. It can be either 4 bytes or 8 b
 
 #### WINC_TYPE_IPV6ADDR
 
-The IPv6 elelment contains an IPv6 arress value. It can be either 16 bytes or 17 bytes. A 16 byte element represents a single IPv6 address. a 17 byte element represents an IPv6 address and scope.
+The IPv6 element contains an IPv6 address value. It can be either 16 bytes or 17 bytes. A 16 byte element represents a single IPv6 address. A 17 byte element represents an IPv6 address and scope.
 
 #### WINC_TYPE_BOOL
 
@@ -279,13 +355,13 @@ Functions can have preceding arguments which are specific to that particular fun
 uint32_t optId, WINC_TYPE typeOptVal, uintptr_t optVal, size_t lenOptVal
 ```
 
-To query all parameter values, the ID field of the function must be set to a special IGNORE value. If the configuration function was **WINC_CmdEXAMPLE** then the ignore value name would be **WINC_CMDEXAMPLE_ID_IGNORE_VAL**, i.e. **WINC_CMD\<NAME\>\_ID_IGNORE_VAL**. Using this value for `optId` will cause all paramater values to be queried and their values returned via the response callback. The value of subsequence arguments should be set to their IGNORE values as will.
+To query all parameter values, the ID field of the function must be set to a special IGNORE value. If the configuration function was **WINC_CmdEXAMPLE** then the ignore value name would be **WINC_CMDEXAMPLE_ID_IGNORE_VAL**, i.e. **WINC_CMD\<NAME\>\_ID_IGNORE_VAL**. Using this value for `optId` will cause all parameter values to be queried and their values returned via the response callback. The value of subsequent arguments should be set to their IGNORE values as well.
 
 ``` c
 WINC_CmdEXAMPLE(... , WINC_CMDEXAMPLE_ID_IGNORE_VAL, WINC_TYPE_INVALID, 0, 0);
 ```
 
-To query a single paramter value, the ID field of the function must be set to the ID required. The name of the ID will be of the form **WINC_CFG_PARAM_ID\_\<NAME\>\_\<PARAM_NAME\>**.
+To query a single parameter value, the ID field of the function must be set to the ID required. The name of the ID will be of the form **WINC_CFG_PARAM_ID\_\<NAME\>\_\<PARAM_NAME\>**.
 
 For example, querying the parameter named **PARAM_ONE** would look like:
 
@@ -316,6 +392,8 @@ These parameters may have only one value and are accessed using the parameter ID
 These parameters may have more than one value.
 
 When reading all values, the parameter ID can be used, however when accessing a single value within the set of all values the function will use a fractional integer form of the ID consisting of \<ID\>.\<INDEX\>
+
+A fractional ID is formed with **WINC_CmdFormFractInt(\<ID\>, \<INDEX\>)**, for example `WINC_CmdFormFractInt(5, 1)` for 5.1. The ID part must be non-zero. The examples in this document show fractional IDs in \<ID\>.\<INDEX\> notation. Fractional IDs in responses are read as **WINC_TYPE_INTEGER_FRAC** into a **WINC_DEV_FRACT_INT_TYPE**, see [WINC_CmdReadParamElem](#AN_DRV_API_WINC_CMDREADPARAMELEM).
 
 <a id="EXAMPLE_ReadAllParamVal"></a>
 **Reading all parameter values**
@@ -438,6 +516,7 @@ sequenceDiagram
     API->>APP: Status:WINC_CMD_ID_CMD(OK)
 ```
 
+<a id="_default_configurations_and_presets"></a>
 #### Default Configurations and Presets:
 
 Configuration commands are initially loaded with default values, also known as **preset 0**. Many configuration commands also support reloading preset values.
@@ -489,6 +568,880 @@ sequenceDiagram
 ```
 
 ---
+## Driver API Reference
+
+This section describes the driver functions used to initialize the device, send command requests and receive responses and AECs. The functions are declared in **winc_dev.h**, **winc_cmd_req.h**, **winc_cmds.h**, **winc_sdio_drv.h** and **winc_tables.h**.
+
+### Device
+
+<a id="AN_DRV_API_WINC_DEVINIT"></a>
+#### WINC_DevInit
+
+##### Description
+
+Initializes the driver state and returns a device handle for use with the other driver functions.
+
+**WINC_DEVICE_HANDLE WINC_DevInit(const WINC_DEV_INIT *pInitData)**
+
+| Name | Type | Description |
+|----|----|----|
+| pInitData | const WINC_DEV_INIT \* | Pointer to the [WINC_DEV_INIT](#AN_DRV_API_WINC_DEV_INIT) initialization data. |
+
+##### Returns
+
+A device handle, or **WINC_DEVICE_INVALID_HANDLE** if *pInitData* is NULL or the receive buffer is too small.
+
+##### Remarks
+
+The receive buffer must persist for the lifetime of the driver. If **WINC_DEV_CACHE_LINE_SIZE** is defined the buffer is aligned to, and truncated to whole, cache lines.
+
+If the driver is already initialized the existing handle is returned and *pInitData* is ignored.
+
+On success the bus state is **WINC_DEV_BUS_STATE_IDLE**; see [WINC_DevBusStateSet](#AN_DRV_API_WINC_DEVBUSSTATESET).
+
+---
+#### WINC_DevDeinit
+
+##### Description
+
+De-initializes the driver.
+
+**void WINC_DevDeinit(WINC_DEVICE_HANDLE devHandle)**
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+
+##### Returns
+
+None.
+
+##### Remarks
+
+Any queued command requests are discarded; their callbacks receive **WINC_DEV_CMDREQ_EVENT_STATUS_COMPLETE** with an *eventArg* of 0.
+
+---
+<a id="AN_DRV_API_WINC_DEVRESET"></a>
+#### WINC_DevReset
+
+##### Description
+
+Resets the driver state following a device communications failure.
+
+**bool WINC_DevReset(WINC_DEVICE_HANDLE devHandle)**
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+
+##### Returns
+
+true or false indicating success or failure.
+
+##### Remarks
+
+All pending command requests are completed with errors via their callbacks, and any event in progress is discarded. Registered AEC and intercept callbacks and the receive buffer are retained.
+
+The bus is left in the **WINC_DEV_BUS_STATE_ERROR** state, so command requests submitted after the reset are completed rather than queued. To recover, set the bus state to **WINC_DEV_BUS_STATE_IDLE**, reset the device, repeat the transport initialization ([WINC_SDIODeviceInit](#AN_DRV_API_WINC_SDIODEVICEINIT)) and then set the bus state to **WINC_DEV_BUS_STATE_ACTIVE**.
+
+---
+#### WINC_DevSetDebugPrintf
+
+##### Description
+
+Sets the function used by the driver to output debug messages.
+
+**void WINC_DevSetDebugPrintf(WINC_DEBUG_PRINTF_FP pfPrintf)**
+
+| Name | Type | Description |
+|----|----|----|
+| pfPrintf | WINC_DEBUG_PRINTF_FP | Pointer to a printf style function: `void (*)(const char *format, …​)`. NULL disables debug output. |
+
+##### Returns
+
+None.
+
+##### Remarks
+
+The messages output depend on the **WINC_DEBUG_LEVEL** configuration option.
+
+### Transport
+
+<a id="AN_DRV_API_WINC_SDIODEVICEINIT"></a>
+#### WINC_SDIODeviceInit
+
+##### Description
+
+Initializes the SDIO over SPI transport to the device.
+
+    WINC_SDIO_STATUS_TYPE WINC_SDIODeviceInit(WINC_SDIO_STATE_TYPE *pState, WINC_SDIO_SEND_RECEIVE_FP pfSendReceive)
+
+| Name | Type | Description |
+|----|----|----|
+| pState | WINC_SDIO_STATE_TYPE \* | Pointer to the initialization state, or NULL. The state must be set to **WINC_SDIO_STATE_UNKNOWN** before the first call. |
+| pfSendReceive | WINC_SDIO_SEND_RECEIVE_FP | Pointer to the SPI send/receive function, see [WINC_SDIO_SEND_RECEIVE_FP](#AN_DRV_API_WINC_SDIO_SEND_RECEIVE_FP). |
+
+##### Returns
+
+| Value | Description |
+|----|----|
+| WINC_SDIO_STATUS_OK | Initialization complete. |
+| WINC_SDIO_STATUS_RESET_WAITING | Waiting for the device reset to complete, call again. |
+| WINC_SDIO_STATUS_OP_WAITING | Waiting for the CMD5 operation to complete, call again. |
+| WINC_SDIO_STATUS_ERROR | An error occurred. |
+| WINC_SDIO_STATUS_CFG_FAILED | Configuration of the device failed. |
+| WINC_SDIO_STATUS_OP_FAILED | The CMD5 operation failed. |
+| WINC_SDIO_STATUS_RESET_FAILED | The reset operation failed. |
+| WINC_SDIO_STATUS_ABORT_FAILED | The abort operation failed. |
+
+##### Remarks
+
+If *pState* is NULL the function blocks until initialization completes or fails. Otherwise each call performs the next step and returns a positive waiting status while initialization is in progress; see [Asynchronous Transport Initialization](#_asynchronous_transport_initialization). Negative values are errors.
+
+Once initialization completes, set the bus state to **WINC_DEV_BUS_STATE_ACTIVE** with [WINC_DevBusStateSet](#AN_DRV_API_WINC_DEVBUSSTATESET) to allow command requests to be sent.
+
+---
+### Event Functions
+
+<a id="AN_DRV_API_WINC_DEVHANDLEEVENT"></a>
+#### WINC_DevHandleEvent
+
+##### Description
+
+Reads and acknowledges a new event signalled by the device interrupt.
+
+    bool WINC_DevHandleEvent(WINC_DEVICE_HANDLE devHandle, WINC_DEV_EVENT_CHECK_FP pfEventIntCheck)
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+| pfEventIntCheck | WINC_DEV_EVENT_CHECK_FP | Pointer to a function returning true while the device interrupt line is asserted, or NULL. |
+
+##### Returns
+
+true or false indicating success or failure.
+
+##### Remarks
+
+Must only be called when [WINC_DevEventPending](#AN_DRV_API_WINC_DEVEVENTPENDING) returns false, otherwise it fails with **WINC_DEV_ERROR_EVENT_PENDING**.
+
+If *pfEventIntCheck* is provided the driver waits, after acknowledging the event, for the device to release its interrupt line. If the line is not released within **WINC_DEV_INT_RELEASE_RETRY_CNT** checks the call fails with **WINC_DEV_ERROR_INT_STUCK** and the bus enters the error state.
+
+See [Event Processing](#_event_processing).
+
+---
+<a id="AN_DRV_API_WINC_DEVUPDATEEVENT"></a>
+#### WINC_DevUpdateEvent
+
+##### Description
+
+Progresses the current event.
+
+**bool WINC_DevUpdateEvent(WINC_DEVICE_HANDLE devHandle)**
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+
+##### Returns
+
+true or false indicating success or failure. A failure caused by a bus error leaves the bus in the **WINC_DEV_BUS_STATE_ERROR** state; see [WINC_DevReset](#AN_DRV_API_WINC_DEVRESET).
+
+##### Remarks
+
+Each call processes a single message, so the function must be called repeatedly while [WINC_DevEventPending](#AN_DRV_API_WINC_DEVEVENTPENDING) returns true. Calling it with no event in progress has no effect.
+
+Command response, AEC and intercept callbacks are invoked from within this function, in the context of the caller. The driver lock is not held while a callback runs, so callbacks may call other driver functions.
+
+---
+<a id="AN_DRV_API_WINC_DEVEVENTPENDING"></a>
+#### WINC_DevEventPending
+
+##### Description
+
+Indicates whether an event is part way through being processed.
+
+**bool WINC_DevEventPending(WINC_DEVICE_HANDLE devHandle)**
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+
+##### Returns
+
+true if [WINC_DevUpdateEvent](#AN_DRV_API_WINC_DEVUPDATEEVENT) must be called again to complete the current event, otherwise false.
+
+##### Remarks
+
+No further interrupt is raised by the device while an event is in progress.
+
+---
+### Command Requests
+
+<a id="AN_DRV_API_WINC_CMDREQINIT"></a>
+#### WINC_CmdReqInit
+
+##### Description
+
+Initializes a command request in an application supplied buffer.
+
+    WINC_CMD_REQ_HANDLE WINC_CmdReqInit(uint8_t* pBuffer, size_t lenBuffer, int numCommands, WINC_DEV_CMD_RSP_CB pfCmdRspCallback, uintptr_t cmdRspCallbackCtx)
+
+| Name | Type | Description |
+|----|----|----|
+| pBuffer | uint8_t \* | Pointer to the buffer to contain the command request. |
+| lenBuffer | size_t | Length of the buffer. |
+| numCommands | int | Maximum number of commands to be added to the request. |
+| pfCmdRspCallback | WINC_DEV_CMD_RSP_CB | Pointer to the callback to receive events for this request, see [WINC_DEV_CMD_RSP_CB](#AN_DRV_API_WINC_DEV_CMD_RSP_CB). |
+| cmdRspCallbackCtx | uintptr_t | Context value passed to the callback. |
+
+##### Returns
+
+A command request handle, or **WINC_CMD_REQ_INVALID_HANDLE** if the buffer is NULL or too small.
+
+##### Remarks
+
+Commands are added by calling the **WINC_Cmd** functions with the handle, then the request is sent with [WINC_DevTransmitCmdReq](#AN_DRV_API_WINC_DEVTRANSMITCMDREQ).
+
+The handle is the address of *pBuffer*. The buffer must persist until the callback receives **WINC_DEV_CMDREQ_EVENT_STATUS_COMPLETE**, after which it may be freed or reused.
+
+---
+<a id="AN_DRV_API_WINC_DEVTRANSMITCMDREQ"></a>
+#### WINC_DevTransmitCmdReq
+
+##### Description
+
+Queues a command request to be sent to the device.
+
+    bool WINC_DevTransmitCmdReq(WINC_DEVICE_HANDLE devHandle, WINC_CMD_REQ_HANDLE cmdReqHandle)
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+| cmdReqHandle | WINC_CMD_REQ_HANDLE | Command request handle obtained from [WINC_CmdReqInit](#AN_DRV_API_WINC_CMDREQINIT). |
+
+##### Returns
+
+true or false indicating success or failure.
+
+##### Remarks
+
+Requests are sent in order. A request is only sent while the bus state is **WINC_DEV_BUS_STATE_ACTIVE**; requests queued in the **WINC_DEV_BUS_STATE_IDLE** state are sent when the bus becomes active.
+
+Ownership of the command request buffer depends on the result:
+
+- true: the request is queued. The buffer is released through the callback with **WINC_DEV_CMDREQ_EVENT_STATUS_COMPLETE**; the application must not free it before then.
+
+- false, and [WINC_DevBusStateGet](#AN_DRV_API_WINC_DEVBUSSTATEGET) returns **WINC_DEV_BUS_STATE_ERROR**: the callback has already been called with **WINC_DEV_CMDREQ_EVENT_STATUS_COMPLETE**. The application must not free the buffer again.
+
+- false, and the bus is not in the error state: the request was rejected and never queued, and the callback has not been called. The application must free the buffer.
+
+``` c
+if (false == WINC_DevTransmitCmdReq(wincDevHandle, cmdReqHandle))
+{
+    if (WINC_DEV_BUS_STATE_ERROR != WINC_DevBusStateGet(wincDevHandle))
+    {
+        /* Rejected before being queued, the buffer must be freed here */
+        free((void*)cmdReqHandle);
+    }
+}
+```
+
+---
+#### WINC_CmdReqDiscard
+
+##### Description
+
+Discards a command request.
+
+    bool WINC_CmdReqDiscard(WINC_DEVICE_HANDLE devHandle, WINC_CMD_REQ_HANDLE cmdReqHandle)
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle passed to the callback, may be **WINC_DEVICE_INVALID_HANDLE** if the request has not been sent. |
+| cmdReqHandle | WINC_CMD_REQ_HANDLE | Command request handle obtained from [WINC_CmdReqInit](#AN_DRV_API_WINC_CMDREQINIT). |
+
+##### Returns
+
+true or false indicating success or failure.
+
+##### Remarks
+
+Used to abandon a request which has not been sent. The callback receives **WINC_DEV_CMDREQ_EVENT_STATUS_COMPLETE** with an *eventArg* of 0, and the buffer may then be released.
+
+---
+#### WINC_CmdReqSend
+
+##### Description
+
+Adds an already formatted command to a command request.
+
+**bool WINC_CmdReqSend(WINC_CMD_REQ_HANDLE handle, WINC_COMMAND_REQUEST *pCmdReq)**
+
+| Name | Type | Description |
+|----|----|----|
+| handle | WINC_CMD_REQ_HANDLE | Command request handle obtained from [WINC_CmdReqInit](#AN_DRV_API_WINC_CMDREQINIT). |
+| pCmdReq | WINC_COMMAND_REQUEST \* | Pointer to a formatted command message. |
+
+##### Returns
+
+true or false indicating success or failure.
+
+##### Remarks
+
+This is the equivalent of a **WINC_Cmd** function for a command message built by the application, for example one forwarded from another interface. It fails if there is insufficient space in the request buffer.
+
+---
+### Responses and AECs
+
+<a id="AN_DRV_API_WINC_DEVAECCALLBACKREGISTER"></a>
+#### WINC_DevAECCallbackRegister
+
+##### Description
+
+Registers a callback to receive AECs.
+
+    bool WINC_DevAECCallbackRegister(WINC_DEVICE_HANDLE devHandle, WINC_DEV_AEC_RSP_CB pfAecRspCallback, uintptr_t aecRspCallbackCtx)
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+| pfAecRspCallback | WINC_DEV_AEC_RSP_CB | Pointer to the callback, see [WINC_DEV_AEC_RSP_CB](#AN_DRV_API_WINC_DEV_AEC_RSP_CB). |
+| aecRspCallbackCtx | uintptr_t | Context value passed to the callback. |
+
+##### Returns
+
+true or false indicating success or failure. Fails if **WINC_DEV_NUM_AEC_CB_ENTRIES** callbacks are already registered.
+
+##### Remarks
+
+Every registered callback receives every AEC. The callback should be registered before the transport is initialized so that the boot AEC is received.
+
+---
+#### WINC_DevAECCallbackDeregister
+
+##### Description
+
+De-registers an AEC callback.
+
+    bool WINC_DevAECCallbackDeregister(WINC_DEVICE_HANDLE devHandle, WINC_DEV_AEC_RSP_CB pfAecRspCallback)
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+| pfAecRspCallback | WINC_DEV_AEC_RSP_CB | Pointer to the callback previously registered. |
+
+##### Returns
+
+true or false indicating success or failure.
+
+##### Remarks
+
+None.
+
+---
+<a id="AN_DRV_API_WINC_DEVINTERCEPTCALLBACKREGISTER"></a>
+#### WINC_DevInterceptCallbackRegister
+
+##### Description
+
+Registers a callback to receive each raw message from the device before it is processed.
+
+    bool WINC_DevInterceptCallbackRegister(WINC_DEVICE_HANDLE devHandle, WINC_DEV_RX_INTERCEPT_CB pfInterceptCallback, uintptr_t interceptCallbackCtx)
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+| pfInterceptCallback | WINC_DEV_RX_INTERCEPT_CB | Pointer to the callback, see [WINC_DEV_RX_INTERCEPT_CB](#AN_DRV_API_WINC_DEV_RX_INTERCEPT_CB), or NULL to remove it. |
+| interceptCallbackCtx | uintptr_t | Context value passed to the callback. |
+
+##### Returns
+
+true or false indicating success or failure.
+
+##### Remarks
+
+Only one intercept callback can be registered. The callback observes messages, it cannot prevent their normal processing.
+
+---
+<a id="AN_DRV_API_WINC_DEVUNPACKELEMENTS"></a>
+#### WINC_DevUnpackElements
+
+##### Description
+
+Unpacks packed TLV parameters into an array of element structures.
+
+    bool WINC_DevUnpackElements(uint8_t numTlvs, const uint8_t *pTLVBytes, WINC_DEV_PARAM_ELEM *pElems)
+
+| Name | Type | Description |
+|----|----|----|
+| numTlvs | uint8_t | Number of TLVs to unpack. |
+| pTLVBytes | const uint8_t \* | Pointer to the packed TLVs. |
+| pElems | WINC_DEV_PARAM_ELEM \* | Pointer to an array of at least *numTlvs* elements to receive the result. |
+
+##### Returns
+
+true or false indicating success or failure.
+
+##### Remarks
+
+Used to examine the parameters of the command which caused a response or status, from the *srcCmd.numParams* and *srcCmd.pParams* fields of the event structure. The elements point into the original data, which is only valid during the callback.
+
+---
+<a id="AN_DRV_API_WINC_CMDREADPARAMELEM"></a>
+#### WINC_CmdReadParamElem
+
+##### Description
+
+Extracts the value of a response element or parameter.
+
+    size_t WINC_CmdReadParamElem(const WINC_DEV_PARAM_ELEM *const pElem, WINC_TYPE typeVal, void *pVal, size_t lenVal)
+
+| Name | Type | Description |
+|----|----|----|
+| pElem | const WINC_DEV_PARAM_ELEM \*const | Pointer to the element. |
+| typeVal | WINC_TYPE | Type of the value to extract. |
+| pVal | void \* | Pointer to the buffer to receive the value. |
+| lenVal | size_t | Length of the buffer. |
+
+##### Returns
+
+The length of the value written to *pVal*, or 0 for error.
+
+##### Remarks
+
+*pVal* is cleared before the value is written.
+
+- Integer types: any integer element can be read into any integer type of size *lenVal*; signed values are sign extended. Reading as **WINC_TYPE_INTEGER_FRAC** fills a **WINC_DEV_FRACT_INT_TYPE**, with the fractional part set to -1 if the element was a whole integer.
+
+- **WINC_TYPE_STRING** and **WINC_TYPE_BYTE_ARRAY**: either type can be read as the other. *lenVal* must be at least the element length; strings are not null-terminated.
+
+- **WINC_TYPE_IPV4ADDR** and **WINC_TYPE_IPV6ADDR**: *lenVal* may be the short (4 or 16 bytes) or long (8 or 17 bytes) form; any part not present in the element is left zero.
+
+- Other types: the type must match and *lenVal* must equal the element length.
+
+---
+### Bus State and Errors
+
+<a id="AN_DRV_API_WINC_DEVBUSSTATEGET"></a>
+#### WINC_DevBusStateGet
+
+##### Description
+
+Returns the current bus state.
+
+**WINC_DEV_BUS_STATE_TYPE WINC_DevBusStateGet(WINC_DEVICE_HANDLE devHandle)**
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+
+##### Returns
+
+The current bus state, see [WINC_DEV_BUS_STATE_TYPE](#AN_DRV_API_WINC_DEV_BUS_STATE_TYPE).
+
+##### Remarks
+
+None.
+
+---
+<a id="AN_DRV_API_WINC_DEVBUSSTATESET"></a>
+#### WINC_DevBusStateSet
+
+##### Description
+
+Sets the bus state.
+
+    bool WINC_DevBusStateSet(WINC_DEVICE_HANDLE devHandle, WINC_DEV_BUS_STATE_TYPE busState)
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+| busState | WINC_DEV_BUS_STATE_TYPE | **WINC_DEV_BUS_STATE_IDLE** or **WINC_DEV_BUS_STATE_ACTIVE**. |
+
+##### Returns
+
+true or false indicating success or failure. Other states are rejected.
+
+##### Remarks
+
+Setting **WINC_DEV_BUS_STATE_ACTIVE** starts sending any queued command requests. Setting **WINC_DEV_BUS_STATE_IDLE** stops new requests being sent, for example while the device is being reset or is in a low power state, and clears the **WINC_DEV_BUS_STATE_ERROR** state.
+
+---
+<a id="AN_DRV_API_WINC_DEVGETLASTERROR"></a>
+#### WINC_DevGetLastError
+
+##### Description
+
+Returns the code of the last driver error.
+
+**WINC_DEV_ERROR_TYPE WINC_DevGetLastError(WINC_DEVICE_HANDLE devHandle)**
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+
+##### Returns
+
+The last error code, or **WINC_DEV_ERROR_NONE** if no error has occurred since the last call. See [WINC_DEV_ERROR_TYPE](#AN_DRV_API_WINC_DEV_ERROR_TYPE).
+
+##### Remarks
+
+The error is cleared when read. Use after a driver function returns false.
+
+---
+#### WINC_DevGetLastErrorEx
+
+##### Description
+
+Returns extended information about the last driver error.
+
+    bool WINC_DevGetLastErrorEx(WINC_DEVICE_HANDLE devHandle, WINC_DEV_EXTENDED_ERROR *pError)
+
+| Name | Type | Description |
+|----|----|----|
+| devHandle | WINC_DEVICE_HANDLE | Device handle obtained from [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT). |
+| pError | WINC_DEV_EXTENDED_ERROR \* | Pointer to a [WINC_DEV_EXTENDED_ERROR](#AN_DRV_API_WINC_DEV_EXTENDED_ERROR) structure to receive the error information. |
+
+##### Returns
+
+true if error information was available, false if no error has occurred since the last call.
+
+##### Remarks
+
+Only available when the **WINC_DEV_EXTENDED_ERROR_INFO** configuration option is defined. The error is cleared when read.
+
+---
+#### WINC_DevErrorToString
+
+##### Description
+
+Converts an error code to a descriptive string.
+
+**const char* WINC_DevErrorToString(WINC_DEV_ERROR_TYPE error)**
+
+| Name  | Type                | Description |
+|-------|---------------------|-------------|
+| error | WINC_DEV_ERROR_TYPE | Error code. |
+
+##### Returns
+
+Pointer to a static string describing the error.
+
+##### Remarks
+
+None.
+
+---
+### Tables
+
+The table functions translate command, AEC and status IDs to and from their names, for example for logging.
+
+#### WINC_TablesCommandIterate, WINC_TablesAECIterate, WINC_TablesStatusIterate
+
+##### Description
+
+Iterate through the command, AEC or status tables.
+
+    uintptr_t WINC_TablesCommandIterate(uintptr_t iterState, uint16_t *pId, const char **ppName)
+    uintptr_t WINC_TablesAECIterate(uintptr_t iterState, uint16_t *pId, const char **ppName)
+    uintptr_t WINC_TablesStatusIterate(uintptr_t iterState, uint16_t *pId, const char **ppName)
+
+| Name | Type | Description |
+|----|----|----|
+| iterState | uintptr_t | 0 to start at the first entry, otherwise the value returned by the previous call. |
+| pId | uint16_t \* | Pointer to receive the ID of the entry, or NULL. |
+| ppName | const char \*\* | Pointer to receive the name of the entry, or NULL. |
+
+##### Returns
+
+The iteration state to pass to the next call.
+
+##### Remarks
+
+The tables contain **WINC_CMD_ID_TABLE_SZ**, **WINC_AEC_ID_TABLE_SZ** and **WINC_STATUS_ID_TABLE_SZ** entries respectively. The entry after the last has a NULL name.
+
+---
+#### WINC_TablesModuleStatusIterate
+
+##### Description
+
+Iterates through the status table, returning only the statuses of one module.
+
+    uintptr_t WINC_TablesModuleStatusIterate(uintptr_t iterState, uint16_t modId, uint16_t *pId, const char **ppName)
+
+| Name | Type | Description |
+|----|----|----|
+| iterState | uintptr_t | 0 to start at the first entry, otherwise the value returned by the previous call. |
+| modId | uint16_t | Module ID. |
+| pId | uint16_t \* | Pointer to receive the status ID, or NULL. |
+| ppName | const char \*\* | Pointer to receive the status name, or NULL. |
+
+##### Returns
+
+The iteration state to pass to the next call.
+
+##### Remarks
+
+The module ID is the upper byte of the status ID; see [Status Response Codes](#_status_response_codes).
+
+---
+#### WINC_TablesCommandLookupByID, WINC_TablesAECLookupByID, WINC_TablesStatusLookupByID
+
+##### Description
+
+Look up the name of a command, AEC or status ID.
+
+    const char* WINC_TablesCommandLookupByID(uint16_t id)
+    const char* WINC_TablesAECLookupByID(uint16_t id)
+    const char* WINC_TablesStatusLookupByID(uint16_t id)
+
+| Name | Type     | Description                |
+|------|----------|----------------------------|
+| id   | uint16_t | Command, AEC or status ID. |
+
+##### Returns
+
+Pointer to the name, or NULL if the ID is not found.
+
+##### Remarks
+
+None.
+
+---
+#### WINC_TablesCommandLookupByString, WINC_TablesAECLookupByString
+
+##### Description
+
+Look up the ID of a command or AEC name.
+
+    uint16_t WINC_TablesCommandLookupByString(const char *pName)
+    uint16_t WINC_TablesAECLookupByString(const char *pName)
+
+| Name  | Type          | Description          |
+|-------|---------------|----------------------|
+| pName | const char \* | Pointer to the name. |
+
+##### Returns
+
+The ID, or 0 if the name is not found.
+
+##### Remarks
+
+The whole name must match; *pName* may be followed by any non-alphanumeric character.
+
+---
+#### WINC_TablesModuleIDListGet
+
+##### Description
+
+Returns the ID of a module from the module list.
+
+**int WINC_TablesModuleIDListGet(uint8_t idx)**
+
+| Name | Type    | Description                                                |
+|------|---------|------------------------------------------------------------|
+| idx  | uint8_t | Index into the module list, 0 to **WINC_NUM_MODULES** - 1. |
+
+##### Returns
+
+The module ID, or -1 if *idx* is out of range.
+
+##### Remarks
+
+None.
+
+---
+### Driver Types
+
+<a id="AN_DRV_API_WINC_DEV_INIT"></a>
+#### WINC_DEV_INIT
+
+Initialization data for [WINC_DevInit](#AN_DRV_API_WINC_DEVINIT).
+
+``` c
+typedef struct
+{
+    uint8_t *pReceiveBuffer;
+    size_t  receiveBufferSize;
+} WINC_DEV_INIT;
+```
+
+| Member | Description |
+|----|----|
+| pReceiveBuffer | Buffer used to receive messages from the device, ideally 2KB. |
+| receiveBufferSize | Size of the receive buffer in bytes. |
+
+<a id="AN_DRV_API_WINC_DEV_CMDREQ_EVENT_TYPE"></a>
+#### WINC_DEV_CMDREQ_EVENT_TYPE
+
+Events delivered to the command response callback, [WINC_DEV_CMD_RSP_CB](#AN_DRV_API_WINC_DEV_CMD_RSP_CB), and the structure pointed to by its *eventArg* parameter.
+
+| Event | eventArg | Description |
+|----|----|----|
+| WINC_DEV_CMDREQ_EVENT_TX_COMPLETE | 0 | The request has been sent to the device. |
+| WINC_DEV_CMDREQ_EVENT_RSP_RECEIVED | [WINC_DEV_EVENT_RSP_ELEMS](#AN_DRV_API_WINC_DEV_EVENT_RSP_ELEMS) | A response has been received for a command in the request. |
+| WINC_DEV_CMDREQ_EVENT_CMD_STATUS | [WINC_DEV_EVENT_STATUS_ARGS](#AN_DRV_API_WINC_DEV_EVENT_STATUS_ARGS) | A command in the request has completed; no further responses will be received for it. |
+| WINC_DEV_CMDREQ_EVENT_STATUS_COMPLETE | [WINC_DEV_EVENT_COMPLETE_ARGS](#AN_DRV_API_WINC_DEV_EVENT_COMPLETE_ARGS), or 0 if discarded | All commands in the request have completed. The request buffer may now be released. |
+
+<a id="AN_DRV_API_WINC_DEV_EVENT_RSP_ELEMS"></a>
+#### WINC_DEV_EVENT_RSP_ELEMS
+
+A command response or AEC, see [Command Responses & AECs](#_command_responses_aecs).
+
+| Member | Description |
+|----|----|
+| rspCmdId | ID of the command which caused the response. |
+| rspId | ID of the response or AEC. |
+| numElems | Number of valid entries in *elems*. |
+| srcCmd | Source command, see [WINC_DEV_EVENT_SRC_CMD](#AN_DRV_API_WINC_DEV_EVENT_SRC_CMD). Not provided for AECs. |
+| elems | Response elements, read with [WINC_CmdReadParamElem](#AN_DRV_API_WINC_CMDREADPARAMELEM). |
+
+---
+<a id="AN_DRV_API_WINC_DEV_EVENT_STATUS_ARGS"></a>
+#### WINC_DEV_EVENT_STATUS_ARGS
+
+``` c
+typedef struct
+{
+    uint16_t                rspCmdId;
+    uint16_t                status;
+    uint16_t                seqNum;
+    WINC_DEV_EVENT_SRC_CMD  srcCmd;
+} WINC_DEV_EVENT_STATUS_ARGS;
+```
+
+| Member | Description |
+|----|----|
+| rspCmdId | ID of the command. |
+| status | Status of the command, see [Status Response Codes](#_status_response_codes). |
+| seqNum | Sequence number of the command message. |
+| srcCmd | Source command, see [WINC_DEV_EVENT_SRC_CMD](#AN_DRV_API_WINC_DEV_EVENT_SRC_CMD). |
+
+<a id="AN_DRV_API_WINC_DEV_EVENT_COMPLETE_ARGS"></a>
+#### WINC_DEV_EVENT_COMPLETE_ARGS
+
+``` c
+typedef struct
+{
+    uint8_t                 numCmds;
+    uint8_t                 numErrors;
+} WINC_DEV_EVENT_COMPLETE_ARGS;
+```
+
+| Member | Description |
+|----|----|
+| numCmds | Number of commands in the request. |
+| numErrors | Number of commands which did not complete successfully. Equal to *numCmds* if the request failed as a whole. |
+
+<a id="AN_DRV_API_WINC_DEV_EVENT_SRC_CMD"></a>
+#### WINC_DEV_EVENT_SRC_CMD
+
+**The command which caused a response or status.**
+
+| Member | Description |
+|----|----|
+| idx | Index of the command within the request. |
+| numParams | Number of parameters of the command. |
+| pParams | Packed TLV parameters, unpack with [WINC_DevUnpackElements](#AN_DRV_API_WINC_DEVUNPACKELEMENTS). |
+
+---
+<a id="AN_DRV_API_WINC_DEV_BUS_STATE_TYPE"></a>
+#### WINC_DEV_BUS_STATE_TYPE
+
+| Value | Description |
+|----|----|
+| WINC_DEV_BUS_STATE_UNKNOWN | The driver is not initialized. |
+| WINC_DEV_BUS_STATE_ERROR | A communications error has occurred. Requests are completed with errors and not sent; see [WINC_DevReset](#AN_DRV_API_WINC_DEVRESET). |
+| WINC_DEV_BUS_STATE_IDLE | Requests are queued but not sent. |
+| WINC_DEV_BUS_STATE_ACTIVE | Requests are sent to the device. |
+
+<a id="AN_DRV_API_WINC_DEV_ERROR_TYPE"></a>
+#### WINC_DEV_ERROR_TYPE
+
+Error codes returned by [WINC_DevGetLastError](#AN_DRV_API_WINC_DEVGETLASTERROR).
+
+| Value | Description |
+|----|----|
+| WINC_DEV_ERROR_NONE | No error. |
+| WINC_DEV_ERROR_INVALID_HANDLE | Invalid handle. |
+| WINC_DEV_ERROR_NOT_INITIALIZED | The driver is not initialized. |
+| WINC_DEV_ERROR_INVALID_PARAM | Invalid parameter. |
+| WINC_DEV_ERROR_BUS_ALREADY_ERROR | The bus is in the error state. |
+| WINC_DEV_ERROR_EVENT_PENDING | An event is already in progress. |
+| WINC_DEV_ERROR_NULL_EVENT_HEADER | Internal event error. |
+| WINC_DEV_ERROR_ZERO_LENGTH_EVENT | A zero length event was received. |
+| WINC_DEV_ERROR_UNKNOWN_EVENT_TYPE | An unknown event type was received. |
+| WINC_DEV_ERROR_MUTEX_FAILED | The lock could not be acquired. |
+| WINC_DEV_ERROR_SPI_CMD52_FAILED | An SPI CMD52 transfer failed. |
+| WINC_DEV_ERROR_SPI_CMD53_READ_FAILED | An SPI CMD53 read failed. |
+| WINC_DEV_ERROR_SPI_CMD53_WRITE_FAILED | An SPI CMD53 write failed. |
+| WINC_DEV_ERROR_BUFFER_OVERFLOW | A message did not fit in the receive buffer. |
+| WINC_DEV_ERROR_INT_STUCK | The device did not release its interrupt line. |
+
+<a id="AN_DRV_API_WINC_DEV_EXTENDED_ERROR"></a>
+#### WINC_DEV_EXTENDED_ERROR
+
+**Only available when **WINC_DEV_EXTENDED_ERROR_INFO** is defined.**
+
+| Member | Description |
+|----|----|
+| code | Error code, see [WINC_DEV_ERROR_TYPE](#AN_DRV_API_WINC_DEV_ERROR_TYPE). |
+| spiStatus | SPI status for SPI errors, otherwise 0. |
+| file | Source file in which the error was detected. |
+| line | Source line at which the error was detected. |
+
+---
+<a id="AN_DRV_API_WINC_DEV_CMD_RSP_CB"></a>
+#### WINC_DEV_CMD_RSP_CB
+
+Command response callback, registered with [WINC_CmdReqInit](#AN_DRV_API_WINC_CMDREQINIT).
+
+    void (*WINC_DEV_CMD_RSP_CB)(uintptr_t context, WINC_DEVICE_HANDLE devHandle, WINC_CMD_REQ_HANDLE cmdReqHandle, WINC_DEV_CMDREQ_EVENT_TYPE event, uintptr_t eventArg)
+
+*event* and *eventArg* are described in [WINC_DEV_CMDREQ_EVENT_TYPE](#AN_DRV_API_WINC_DEV_CMDREQ_EVENT_TYPE). The structure pointed to by *eventArg* is only valid during the callback.
+
+<a id="AN_DRV_API_WINC_DEV_AEC_RSP_CB"></a>
+#### WINC_DEV_AEC_RSP_CB
+
+AEC callback, registered with [WINC_DevAECCallbackRegister](#AN_DRV_API_WINC_DEVAECCALLBACKREGISTER).
+
+    void (*WINC_DEV_AEC_RSP_CB)(uintptr_t context, WINC_DEVICE_HANDLE devHandle, const WINC_DEV_EVENT_RSP_ELEMS *const pElems)
+
+*pElems* is only valid during the callback.
+
+<a id="AN_DRV_API_WINC_DEV_RX_INTERCEPT_CB"></a>
+#### WINC_DEV_RX_INTERCEPT_CB
+
+Receive intercept callback, registered with [WINC_DevInterceptCallbackRegister](#AN_DRV_API_WINC_DEVINTERCEPTCALLBACKREGISTER).
+
+    void (*WINC_DEV_RX_INTERCEPT_CB)(uintptr_t context, WINC_DEVICE_HANDLE devHandle, WINC_COMMAND_MSG_TYPE msgType, uint8_t *pMsg, size_t msgLength)
+
+*msgType* is the message type (status, response or AEC), *pMsg* and *msgLength* the raw message. *pMsg* is only valid during the callback.
+
+#### WINC_DEV_EVENT_CHECK_FP
+
+Interrupt line check function, passed to [WINC_DevHandleEvent](#AN_DRV_API_WINC_DEVHANDLEEVENT).
+
+    bool (*WINC_DEV_EVENT_CHECK_FP)(void)
+
+Returns true while the device interrupt line is asserted.
+
+---
+<a id="AN_DRV_API_WINC_SDIO_SEND_RECEIVE_FP"></a>
+#### WINC_SDIO_SEND_RECEIVE_FP
+
+SPI transfer function, passed to [WINC_SDIODeviceInit](#AN_DRV_API_WINC_SDIODEVICEINIT).
+
+    bool (*WINC_SDIO_SEND_RECEIVE_FP)(void* pTransmitData, void* pReceiveData, size_t size)
+
+Performs a full duplex transfer of *size* bytes, asserting the device chip select for the duration of the call, and returns true on success. Either buffer may be NULL: if *pTransmitData* is NULL 0xFF bytes must be transmitted (see the **WINC_CONF_SPI_MOSI_IDLE_LEVEL** configuration option); if *pReceiveData* is NULL the received data is discarded.
+
+#### WINC_SDIO_STATE_TYPE
+
+Transport initialization state used by [WINC_SDIODeviceInit](#AN_DRV_API_WINC_SDIODEVICEINIT). The application sets it to **WINC_SDIO_STATE_UNKNOWN** to start initialization and must not otherwise modify it.
+
+---
 <a id="_status_response_codes"></a>
 ## Status Response Codes
 
@@ -496,16 +1449,16 @@ sequenceDiagram
 |----|----|----|
 | 0x0000 | WINC_STATUS_OK | OK |
 | 0x0001 | WINC_STATUS_ERROR | General Error |
-| 0x0002 | WINC_STATUS_INVALID_CMD | Invalid AT Command |
-| 0x0003 | WINC_STATUS_UNKNOWN_CMD | Unknown AT Command |
+| 0x0002 | WINC_STATUS_INVALID_CMD | Invalid Command |
+| 0x0003 | WINC_STATUS_UNKNOWN_CMD | Unknown Command |
 | 0x0004 | WINC_STATUS_INVALID_PARAMETER | Invalid Parameter |
 | 0x0005 | WINC_STATUS_INCORRECT_NUM_PARAMS | Incorrect Number of Parameters |
-| 0x0006 | WINC_STATUS_STORE_UPDATE_BLOCKED | Configuration Update Blocked |
+| 0x0006 | <span id="AN_STATUS_STORE_UPDATE_BLOCKED"></span> WINC_STATUS_STORE_UPDATE_BLOCKED | Configuration Update Blocked |
 | 0x0007 | WINC_STATUS_STORE_ACCESS_FAILED | Configuration Access Failed |
-| 0x0008 | WINC_STATUS_TIMEOUT | Command Timed Out |
+| 0x0008 | <span id="AN_STATUS_TIMEOUT"></span> WINC_STATUS_TIMEOUT | Command Timed Out |
 | 0x0009 | WINC_STATUS_HOST_INTERFACE_FAILED | Host Interface Failed |
 | 0x000a | WINC_STATUS_ACCESS_DENIED | Access Denied |
-| 0x000b | WINC_STATUS_CONFIG_CONFLICT | Configuration Conflict |
+| 0x000b | <span id="AN_STATUS_CONFIG_CONFLICT"></span> WINC_STATUS_CONFIG_CONFLICT | Configuration Conflict |
 
 CORE Status Codes (Module ID = 0)
 
@@ -524,7 +1477,7 @@ CORE Status Codes (Module ID = 0)
 
 | Value | Name | Description |
 |----|----|----|
-| 0x0300 | WINC_STATUS_CFG_NOT_PRESENT | Configuration not present |
+| 0x0300 | <span id="AN_STATUS_CFG_NOT_PRESENT"></span> WINC_STATUS_CFG_NOT_PRESENT | Configuration not present |
 
 [CFG](#AN_MOD_CFG) Status Codes (Module ID = 3)
 
@@ -575,18 +1528,18 @@ CORE Status Codes (Module ID = 0)
 
 | Value | Name | Description |
 |----|----|----|
-| 0x0a00 | WINC_STATUS_ERASE_DONE | Erase Done |
-| 0x0a01 | WINC_STATUS_WRITE_DONE | Write Done |
-| 0x0a02 | WINC_STATUS_VERIFY_DONE | Verify Done |
-| 0x0a03 | WINC_STATUS_ACTIVATE_DONE | Activate Done |
-| 0x0a04 | WINC_STATUS_INVALIDATE_DONE | Invalidate Done |
-| 0x0a05 | WINC_STATUS_OTA_ERROR | OTA Error |
-| 0x0a06 | WINC_STATUS_OTA_NO_STA_CONN | No STA Connection |
-| 0x0a07 | WINC_STATUS_OTA_PROTOCOL_ERROR | Protocol Error |
-| 0x0a08 | WINC_STATUS_OTA_TLS_ERROR | TLS Error |
-| 0x0a09 | WINC_STATUS_OTA_IMG_TOO_LARGE | Image Exceeds |
-| 0x0a0a | WINC_STATUS_OTA_TIMEOUT | Timeout |
-| 0x0a0b | WINC_STATUS_OTA_VERIFY_FAILED | Image Verify Failed |
+| 0x0a00 | <span id="AN_STATUS_ERASE_DONE"></span> WINC_STATUS_ERASE_DONE | Erase Done |
+| 0x0a01 | <span id="AN_STATUS_WRITE_DONE"></span> WINC_STATUS_WRITE_DONE | Write Done |
+| 0x0a02 | <span id="AN_STATUS_VERIFY_DONE"></span> WINC_STATUS_VERIFY_DONE | Verify Done |
+| 0x0a03 | <span id="AN_STATUS_ACTIVATE_DONE"></span> WINC_STATUS_ACTIVATE_DONE | Activate Done |
+| 0x0a04 | <span id="AN_STATUS_INVALIDATE_DONE"></span> WINC_STATUS_INVALIDATE_DONE | Invalidate Done |
+| 0x0a05 | <span id="AN_STATUS_OTA_ERROR"></span> WINC_STATUS_OTA_ERROR | OTA Error |
+| 0x0a06 | <span id="AN_STATUS_OTA_NO_STA_CONN"></span> WINC_STATUS_OTA_NO_STA_CONN | No STA Connection |
+| 0x0a07 | <span id="AN_STATUS_OTA_PROTOCOL_ERROR"></span> WINC_STATUS_OTA_PROTOCOL_ERROR | Protocol Error |
+| 0x0a08 | <span id="AN_STATUS_OTA_TLS_ERROR"></span> WINC_STATUS_OTA_TLS_ERROR | TLS Error |
+| 0x0a09 | <span id="AN_STATUS_OTA_IMG_TOO_LARGE"></span> WINC_STATUS_OTA_IMG_TOO_LARGE | Image Too Large |
+| 0x0a0a | <span id="AN_STATUS_OTA_TIMEOUT"></span> WINC_STATUS_OTA_TIMEOUT | Timeout |
+| 0x0a0b | <span id="AN_STATUS_OTA_VERIFY_FAILED"></span> WINC_STATUS_OTA_VERIFY_FAILED | Image Verify Failed |
 
 [OTA](#AN_MOD_OTA) Status Codes (Module ID = 10)
 
@@ -613,18 +1566,18 @@ CORE Status Codes (Module ID = 0)
 |----|----|----|
 | 0x0e00 | WINC_STATUS_SOCKET_ID_NOT_FOUND | Socket ID Not Found |
 | 0x0e01 | WINC_STATUS_LENGTH_MISMATCH | Length Mismatch |
-| 0x0e02 | WINC_STATUS_NO_FREE_SOCKETS | No Free Sockets |
+| 0x0e02 | <span id="AN_STATUS_NO_FREE_SOCKETS"></span> WINC_STATUS_NO_FREE_SOCKETS | No Free Sockets |
 | 0x0e03 | WINC_STATUS_SOCKET_INVALID_PROTOCOL | Invalid Socket Protocol |
 | 0x0e04 | WINC_STATUS_SOCKET_CLOSE_FAILED | Socket Close Failed |
 | 0x0e05 | WINC_STATUS_SOCKET_BIND_FAILED | Socket Bind Failed |
-| 0x0e06 | WINC_STATUS_SOCKET_TLS_FAILED | Socket TLS Failed |
+| 0x0e06 | <span id="AN_STATUS_SOCKET_TLS_FAILED"></span> WINC_STATUS_SOCKET_TLS_FAILED | Socket TLS Failed |
 | 0x0e07 | WINC_STATUS_SOCKET_CONNECT_FAILED | Socket Connect Failed |
 | 0x0e08 | WINC_STATUS_SOCKET_SEND_FAILED | Socket Send Failed |
 | 0x0e09 | WINC_STATUS_SOCKET_SET_OPT_FAILED | Socket Set Option Failed |
 | 0x0e0a | WINC_STATUS_SOCKET_REMOTE_NOT_SET | Socket Destination Not Set |
 | 0x0e0b | WINC_STATUS_MULTICAST_ERROR | Multicast Error |
-| 0x0e0c | WINC_STATUS_SOCKET_NOT_READY | Socket Not Ready |
-| 0x0e0d | WINC_STATUS_SOCKET_SEQUENCE_ERROR | Socket Sequence Error |
+| 0x0e0c | <span id="AN_STATUS_SOCKET_NOT_READY"></span> WINC_STATUS_SOCKET_NOT_READY | Socket Not Ready |
+| 0x0e0d | <span id="AN_STATUS_SOCKET_SEQUENCE_ERROR"></span> WINC_STATUS_SOCKET_SEQUENCE_ERROR | Socket Sequence Error |
 
 [SOCKET](#AN_MOD_SOCKET) Status Codes (Module ID = 14)
 
@@ -640,11 +1593,11 @@ CORE Status Codes (Module ID = 0)
 
 | Value | Name | Description |
 |----|----|----|
-| 0x1100 | WINC_STATUS_TLS_CA_CERT_MISSING | CA Cert Missing |
-| 0x1101 | WINC_STATUS_TLS_CA_CERT_VALIDATION | CA Cert Validation |
-| 0x1102 | WINC_STATUS_TLS_CA_CERT_DATE_VALIDATION | CA Cert Date Validation |
-| 0x1103 | WINC_STATUS_TLS_KEY_PAIR_INCOMPLETE | Key Pair Incomplete |
-| 0x1104 | WINC_STATUS_TLS_PEER_DOMAIN_MISSING | Peer Domain Missing |
+| 0x1100 | <span id="AN_STATUS_TLS_CA_CERT_MISSING"></span> WINC_STATUS_TLS_CA_CERT_MISSING | CA Cert Missing |
+| 0x1101 | <span id="AN_STATUS_TLS_CA_CERT_VALIDATION"></span> WINC_STATUS_TLS_CA_CERT_VALIDATION | CA Cert Validation |
+| 0x1102 | <span id="AN_STATUS_TLS_CA_CERT_DATE_VALIDATION"></span> WINC_STATUS_TLS_CA_CERT_DATE_VALIDATION | CA Cert Date Validation |
+| 0x1103 | <span id="AN_STATUS_TLS_KEY_PAIR_INCOMPLETE"></span> WINC_STATUS_TLS_KEY_PAIR_INCOMPLETE | Key Pair Incomplete |
+| 0x1104 | <span id="AN_STATUS_TLS_PEER_DOMAIN_MISSING"></span> WINC_STATUS_TLS_PEER_DOMAIN_MISSING | Peer Domain Missing |
 
 [TLS](#AN_MOD_TLS) Status Codes (Module ID = 17)
 
@@ -656,9 +1609,22 @@ CORE Status Codes (Module ID = 0)
 | 0x1201 | WINC_STATUS_WAP_STOP_FAILED | Soft AP Stop Failed |
 | 0x1202 | WINC_STATUS_WAP_START_REFUSED | Soft AP Start Not Permitted |
 | 0x1203 | WINC_STATUS_WAP_START_FAILED | Soft AP Start Failed |
-| 0x1204 | WINC_STATUS_UNSUPPORTTED_SEC_TYPE | Unsupported Security Type |
+| 0x1204 | WINC_STATUS_UNSUPPORTED_SEC_TYPE | Unsupported Security Type |
 
 [WAP](#AN_MOD_WAP) Status Codes (Module ID = 18)
+
+ 
+
+| Value | Name | Description |
+|----|----|----|
+| 0x1300 | WINC_STATUS_WSCN_SCAN_IN_PROGRESS | Scan In Progress |
+| 0x1301 | WINC_STATUS_WSCN_PERIODIC_SCAN_IS_RUNNING | Periodic Scan is Running |
+| 0x1302 | WINC_STATUS_WSCN_INTERVAL_TOO_SHORT | Scan Interval Too Short |
+| 0x1303 | WINC_STATUS_WSCN_AP_MODE_ACTIVE | Soft AP Active |
+| 0x1304 | WINC_STATUS_WSCN_NO_CHANNELS | No Channels To Scan |
+| 0x1305 | WINC_STATUS_WSCN_STA_TRANSITIONING | STA transition In Progress |
+
+[WSCN](#AN_MOD_WSCN) Status Codes (Module ID = 19)
 
  
 
@@ -667,7 +1633,7 @@ CORE Status Codes (Module ID = 0)
 | 0x1400 | WINC_STATUS_STA_DISCONN_REFUSED | STA Disconnect Not Permitted |
 | 0x1401 | WINC_STATUS_STA_DISCONN_FAILED | STA Disconnect Failed |
 | 0x1402 | WINC_STATUS_STA_CONN_REFUSED | STA Connection Not Permitted |
-| 0x1403 | WINC_STATUS_STA_CONN_FAILED | STA Connection Failed |
+| 0x1403 | <span id="AN_STATUS_STA_CONN_FAILED"></span> WINC_STATUS_STA_CONN_FAILED | STA Connection Failed |
 
 [WSTA](#AN_MOD_WSTA) Status Codes (Module ID = 20)
 
@@ -683,7 +1649,7 @@ CORE Status Codes (Module ID = 0)
 
 | Value | Name | Description |
 |----|----|----|
-| 0x1d00 | WINC_STATUS_NVM_LOCKED | NVM Locked Until Reset |
+| 0x1d00 | <span id="AN_STATUS_NVM_LOCKED"></span> WINC_STATUS_NVM_LOCKED | NVM Locked Until Reset |
 
 [NVM](#AN_MOD_NVM) Status Codes (Module ID = 29)
 
@@ -699,9 +1665,9 @@ CORE Status Codes (Module ID = 0)
 
 | Value | Name | Description |
 |----|----|----|
-| 0x1f00 | WINC_STATUS_PPS_WIFI_PS_NOT_ENABLED | Wi-Fi PS Not Enabled |
-| 0x1f01 | WINC_STATUS_PPS_TIMEOUT | PPS Timeout |
-| 0x1f02 | WINC_STATUS_PPS_PAUSE_EXPIRED | PPS Pause Expired |
+| 0x1f00 | <span id="AN_STATUS_PPS_WIFI_PS_NOT_ENABLED"></span> WINC_STATUS_PPS_WIFI_PS_NOT_ENABLED | Wi-Fi PS Not Enabled |
+| 0x1f01 | <span id="AN_STATUS_PPS_TIMEOUT"></span> WINC_STATUS_PPS_TIMEOUT | PPS Timeout |
+| 0x1f02 | <span id="AN_STATUS_PPS_PAUSE_EXPIRED"></span> WINC_STATUS_PPS_PAUSE_EXPIRED | PPS Pause Expired |
 
 [PPS](#AN_MOD_PPS) Status Codes (Module ID = 31)
 
@@ -719,7 +1685,7 @@ CORE Status Codes (Module ID = 0)
 | Value | Name | Description |
 |----|----|----|
 | 0x2200 | WINC_STATUS_HTTP_DNS_FAILED | HTTP DNS failed |
-| 0x2201 | WINC_STATUS_HTTP_TLS_FAILED | HTTP TLS failed |
+| 0x2201 | <span id="AN_STATUS_HTTP_TLS_FAILED"></span> WINC_STATUS_HTTP_TLS_FAILED | HTTP TLS failed |
 | 0x2202 | WINC_STATUS_HTTP_CONNECT_FAILED | HTTP connect failed |
 | 0x2203 | WINC_STATUS_HTTP_MEMORY | HTTP buffer allocation |
 | 0x2204 | WINC_STATUS_HTTP_RESPONSE_HEADERS | HTTP response format |
@@ -731,12 +1697,26 @@ CORE Status Codes (Module ID = 0)
 
  
 
+| Value | Name | Description |
+|----|----|----|
+| 0x2300 | <span id="AN_STATUS_WBCN_IN_PROGRESS"></span> WINC_STATUS_WBCN_IN_PROGRESS | Beaconing In Progress |
+| 0x2301 | <span id="AN_STATUS_WBCN_AP_MODE_ACTIVE"></span> WINC_STATUS_WBCN_AP_MODE_ACTIVE | Soft AP Active |
+| 0x2302 | WINC_STATUS_WBCN_TX_ERROR | Beacon Tx Error |
+| 0x2303 | WINC_STATUS_WBCN_STA_TRANSITIONING | STA Connection In Progress |
+| 0x2304 | <span id="AN_STATUS_WBCN_NO_CHANNELS"></span> WINC_STATUS_WBCN_NO_CHANNELS | No Beacon Channels Selected |
+| 0x2305 | <span id="AN_STATUS_WBCN_INTERVAL_TOO_SHORT"></span> WINC_STATUS_WBCN_INTERVAL_TOO_SHORT | Beacon Interval Too Short |
+
+[WBCN](#AN_MOD_WBCN) Status Codes (Module ID = 35)
+
+ 
+
 ---
 <a id="AN_MOD_SYSTEM"></a>
 ## SYSTEM (Module ID = 1)
 
 ### AEC Reference:
 
+<a id="AN_AEC_AT_CMD_APP_BOOT"></a>
 #### WINC_AEC_ID_BOOT
 
 ##### Description
@@ -785,6 +1765,13 @@ This function requests manufacturer identification.
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response   | Description          |
 |------------|----------------------|
@@ -850,6 +1837,13 @@ This function requests model identification.
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
 | Response     | Description          |
 |--------------|----------------------|
 | \<MODEL_ID\> | Information Response |
@@ -914,6 +1908,13 @@ This function requests revision identification.
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
 | Response         | Description          |
 |------------------|----------------------|
 | \<VERSION_INFO\> | Information Response |
@@ -952,6 +1953,7 @@ This function requests revision identification.
 
 ### Function Reference:
 
+<a id="AN_FUNC_AT_CFG_CFG"></a>
 #### WINC_CmdCFG
 
 ##### Description
@@ -993,7 +1995,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDCFG_ID_IGNORE_VAL.</p></td>
@@ -1001,23 +2003,30 @@ WINC_CMDCFG_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response       | Description   |
 |----------------|---------------|
@@ -1082,9 +2091,9 @@ WINC_CMDCFG_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -1161,9 +2170,9 @@ Maximum length of string is 5<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -1186,7 +2195,7 @@ Maximum length of string is 5<br />
 <td style="text-align: left;"><p>CMD_BAUD</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
-<td style="text-align: left;"><p>Command baud rate<br />
+<td style="text-align: left;"><p>Command baud rate. Default is 230400<br />
 </p></td>
 </tr>
 <tr>
@@ -1194,7 +2203,7 @@ Maximum length of string is 5<br />
 <td style="text-align: left;"><p>CMD_TIMEOUT</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
-<td style="text-align: left;"><p>Command baud rate change timeout (ms)<br />
+<td style="text-align: left;"><p>Command baud rate change timeout (ms), 0 disables fallback. Default is 0<br />
 </p></td>
 </tr>
 <tr>
@@ -1221,7 +2230,7 @@ with an ID range 51.1 to 51.2<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>52</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_CFG_STORE_ID_AUTOEXEC_STATUS"></span> 52</p></td>
 <td style="text-align: left;"><p>AUTOEXEC_STATUS</p></td>
 <td style="text-align: left;"><p>STATUS<br />
 (Read Only)</p></td>
@@ -1237,9 +2246,9 @@ with an ID range 51.1 to 51.2<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -1286,7 +2295,7 @@ with an ID range 51.1 to 51.2<br />
 
 This function is used to copy configurations to/from storage.
 
-Configurations managed by [WINC_CmdCFGCP](#AN_FUNC_AT_CFG_CFGCP) are groups of configuration command parameters. The command allows these parameters to be saved to either flash files or archive slots in memory for later retrival.
+Configurations managed by [WINC_CmdCFGCP](#AN_FUNC_AT_CFG_CFGCP) are groups of configuration command parameters. The command allows these parameters to be saved to either flash files or archive slots in memory for later retrieval.
 
 [WINC_CmdCFGCP](#AN_FUNC_AT_CFG_CFGCP) supports:
 
@@ -1303,7 +2312,37 @@ Configurations managed by [WINC_CmdCFGCP](#AN_FUNC_AT_CFG_CFGCP) are groups of c
 - Duplicating in memory archive slots
 
 > [!NOTE]
-> Only parameter tables of configuration commands which have been changed are stored to flash files or archive slots.
+> Only parameter tables of configuration commands which have been changed are stored to flash files or archive slots. If no parameters have been changed, nothing is stored; the command still succeeds but the destination slot or file is not created.
+
+**Configuration Persistence**
+
+| Location | After reset |
+|----|----|
+| Active configuration (slot 0) | Lost, returns to the defaults (preset 0) |
+| Archive slots 1 and 2, and their timestamps | Lost |
+| Configuration files (file type 20) | Kept |
+| The 'autoexec' configuration file | Kept, and loaded at boot (see [Auto-Execute Configuration](#AN_NOTE_CFG_AUTOEXEC)) |
+
+When a configuration is stored:
+
+- The whole parameter table of a configuration command is stored once any of its elements has been set, not only the elements which were changed.
+
+- Loading preset 0 (`\<ID\>` 0, see [Default Configurations and Presets](#_default_configurations_and_presets)) marks the table as unchanged again, so it is not stored.
+
+- Only configuration elements are stored; read-only and state elements, such as [ARCHIVE_SLOTS](#AN_FUNC_CFG_STORE_ID_ARCHIVE_SLOTS) and [AUTOEXEC_STATUS](#AN_FUNC_CFG_STORE_ID_AUTOEXEC_STATUS), are not.
+
+- The configurations of [WINC_CmdSOCKC](#AN_FUNC_AT_SOCKET_SOCKC) and [WINC_CmdSYSLOGC](#AN_FUNC_AT_SYSLOG_SYSLOGC) are never stored.
+
+- The parameters of [WINC_CmdCFG](#AN_FUNC_AT_CFG_CFG), including [ARCHIVE_FILTER](#AN_FUNC_CFG_STORE_ID_ARCHIVE_FILTER), are stored like any other configuration command.
+
+---
+When a configuration is restored to the active configuration:
+
+- The stored values are applied on top of the current configuration. Tables which are not in the stored configuration keep their current values; to restore a clean configuration, load preset 0 for each command first, or reset the WINCS02.
+
+- The restore stops at the first error, and values already applied are kept.
+
+- A value which is rejected as an invalid parameter is retried, to allow for dependencies between commands; if it is still rejected after 100 ms the restore fails with [TIMEOUT](#AN_STATUS_TIMEOUT).
 
 **Active Configuration**
 
@@ -1311,28 +2350,53 @@ The active configuration is considered to occupy slot 0 for the purposes of the 
 
 **Archive Slots**
 
-Archive slots are numbered 1+, they represent in memory holding locations for configuration sets. The parameters in these slots are not active and not maintained through reset.
+There are two archive slots, numbered 1 and 2; they represent in memory holding locations for configuration sets. The parameters in these slots are not active and not maintained through reset.
 
-Slots can be queried through [ARCHIVE_SLOTS](#AN_FUNC_CFG_STORE_ID_ARCHIVE_SLOTS), these parameters contain the timestamp of the configuration set when stored from an active configuration.
+Slots can be queried through [ARCHIVE_SLOTS](#AN_FUNC_CFG_STORE_ID_ARCHIVE_SLOTS), these parameters contain the timestamp of the configuration set when stored from an active configuration. The timestamp is the UTC time, so it is close to 1970 if the time has not been set (see [WINC_CmdTIME](#AN_FUNC_AT_TIME_TIME)). Querying an empty slot fails. A configuration copied from a file to a slot keeps the timestamp of the file.
 
-A slot can be emptied by writing a zero value to the appropriate index within [ARCHIVE_SLOTS](#AN_FUNC_CFG_STORE_ID_ARCHIVE_SLOTS).
+A slot can be emptied by writing a zero value to the appropriate index within [ARCHIVE_SLOTS](#AN_FUNC_CFG_STORE_ID_ARCHIVE_SLOTS). Writing a zero value to [ARCHIVE_SLOTS](#AN_FUNC_CFG_STORE_ID_ARCHIVE_SLOTS) without an index empties all slots.
 
 **Archive Filters**
 
 The [ARCHIVE_FILTER](#AN_FUNC_CFG_STORE_ID_ARCHIVE_FILTER) contains a list of command IDs which are filtered out when storing or loading a configuration set. This allows a partial configuration to be stored or restored.
 
+- Up to 8 command IDs can be added. Each write adds one ID to the list; adding an ID which is already in the list, or a ninth ID, fails.
+
+- An ID can be given as a number or as the command name, which must match exactly including the leading `+` (for example `"+WSTAC"`). Queries return the numeric IDs.
+
+- Writing 0 clears the list.
+
+- The filter is applied both when storing and when restoring, using the filter which is active at that time. A command filtered out when the configuration was stored cannot be restored from it.
+
+See example [Storing a partial configuration](#EXAMPLE_CFG_PARTIAL).
+
 **Archive Files**
 
 Configurations are stored in 'Configuration Files' types which can be queried and deleted through [WINC_CmdFSOP](#AN_FUNC_AT_FS_FLFS_FSOP).
 
+---
+**Source and Destination**
+
+The source and destination may each be a slot number (0 for the active configuration, or an archive slot) or a configuration file name. Copying from one file to another is not supported. Copying to a file that already exists fails; the existing file must first be deleted using [WINC_CmdFSOP](#AN_FUNC_AT_FS_FLFS_FSOP). Copying from an empty archive slot, or from a file that does not exist, fails.
+
 **Configuration Summary**
 
-The response to [WINC_CmdCFGCP](#AN_FUNC_AT_CFG_CFGCP) is a summary list of command IDs with the number of command elements being stored or restored and the total size of the memory used for that command.
+The response to [WINC_CmdCFGCP](#AN_FUNC_AT_CFG_CFGCP) is a summary list of command IDs with the number of command elements being stored or restored and the total size of the memory used for that command. The command ID is reported in hexadecimal. The summary is only reported when the source or destination is the active configuration.
 
+<a id="AN_NOTE_CFG_AUTOEXEC"></a>
 **Auto-Execute Configuration**
 
-If a configuration is stored to an archive file called 'autoexec' it will be automatically loaded during device boot, before a command prompt is presented.
+If a configuration is stored to an archive file called 'autoexec' it is automatically loaded during device boot, once the file system has been mounted. The command interface may already be available when it is loaded, so the host should not rely on the configuration being active as soon as the [WINC_AEC_ID_BOOT](#AN_AEC_AT_CMD_APP_BOOT) AEC is received.
 
+After [WINC_AEC_ID_BOOT](#AN_AEC_AT_CMD_APP_BOOT), query [AUTOEXEC_STATUS](#AN_FUNC_CFG_STORE_ID_AUTOEXEC_STATUS) to check the result:
+
+- [CFG_NOT_PRESENT](#AN_STATUS_CFG_NOT_PRESENT): there is no 'autoexec' file, or it has not been loaded yet.
+
+- Any other status: the status of loading the file; OK if every stored value was applied.
+
+To replace the auto-execute configuration, first delete the 'autoexec' file (file type 20) using [WINC_CmdFSOP](#AN_FUNC_AT_FS_FLFS_FSOP), then store the new configuration to it.
+
+---
     bool WINC_CmdCFGCP
     (
         WINC_CMD_REQ_HANDLE handle
@@ -1368,41 +2432,48 @@ If a configuration is stored to an archive file called 'autoexec' it will be aut
 <tr>
 <td style="text-align: left;"><p>typeCfgsrc</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of cfgsrc.<br />
+<td style="text-align: left;"><p>Type of cfgsrc, cfgsrc is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>cfgsrc</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Configuration source.<br />
+<td style="text-align: left;"><p>Configuration source: slot number (0 = active) or file name. For integer types cfgsrc holds the value, for other types cfgsrc is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenCfgsrc</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of cfgsrc.<br />
+<td style="text-align: left;"><p>Length in bytes of the data cfgsrc points to, ignored for integer types.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>typeCfgdst</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of cfgdst.<br />
+<td style="text-align: left;"><p>Type of cfgdst, cfgdst is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>cfgdst</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Configuration destination.<br />
+<td style="text-align: left;"><p>Configuration destination: slot number (0 = active) or file name. For integer types cfgdst holds the value, for other types cfgdst is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenCfgdst</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of cfgdst.<br />
+<td style="text-align: left;"><p>Length in bytes of the data cfgdst points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response                              | Description |
 |---------------------------------------|-------------|
@@ -1429,7 +2500,7 @@ If a configuration is stored to an archive file called 'autoexec' it will be aut
 <td style="text-align: left;"><p>&lt;CMD_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>Configuration command ID<br />
+<td style="text-align: left;"><p>Configuration command ID (hexadecimal)<br />
 </p></td>
 </tr>
 <tr>
@@ -1466,7 +2537,7 @@ sequenceDiagram
     API->>APP: Status:WINC_CMD_ID_WSTAC(OK)
     APP->>API: WINC_CmdWSTAC(3,"Password")
     API->>APP: Status:WINC_CMD_ID_WSTAC(OK)
-    APP->>API: WINC_CmdNETIFC(0,20,1)
+    APP->>API: WINC_CmdNETIFC(0,10,1)
     API->>APP: Status:WINC_CMD_ID_NETIFC(OK)
     APP->>API: WINC_CmdDNSC(1,"1.1.1.1")
     API->>APP: Status:WINC_CMD_ID_DNSC(OK)
@@ -1493,11 +2564,57 @@ sequenceDiagram
     API->>APP: Status:WINC_CMD_ID_CFGCP(OK)
 ```
 
+<a id="EXAMPLE_CFG_PARTIAL"></a>
+**Storing a partial configuration**
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    APP->>API: WINC_CmdWSTAC(1,"SSID")
+    API->>APP: Status:WINC_CMD_ID_WSTAC(OK)
+    APP->>API: WINC_CmdNETIFC(0,10,1)
+    API->>APP: Status:WINC_CMD_ID_NETIFC(OK)
+    APP->>API: WINC_CmdDNSC(1,"1.1.1.1")
+    API->>APP: Status:WINC_CMD_ID_DNSC(OK)
+    Note right of APP: Do not store the Wi-Fi station configuration
+    APP->>API: WINC_CmdCFG(50,"+WSTAC")
+    API->>APP: Status:WINC_CMD_ID_CFG(OK)
+    Note right of APP: Do not store the system configuration, including this filter
+    APP->>API: WINC_CmdCFG(50,"+CFG")
+    API->>APP: Status:WINC_CMD_ID_CFG(OK)
+    Note right of APP: Store the remaining configuration to a file
+    APP->>API: WINC_CmdCFGCP(0,"netonly")
+    API->>APP: Response:WINC_CMD_ID_CFGCP(0x0500,3,49)
+    API->>APP: Response:WINC_CMD_ID_CFGCP(0x0900,11,182)
+    API->>APP: Status:WINC_CMD_ID_CFGCP(OK)
+    Note right of APP: Clear the archive filter
+    APP->>API: WINC_CmdCFG(50,0)
+    API->>APP: Status:WINC_CMD_ID_CFG(OK)
+```
+
 ---
+<a id="AN_MOD_DHCP"></a>
 ## DHCP (Module ID = 4)
 
+### Introduction
+
+The WINCS02 provides a DHCP server for clients connected to its soft AP.
+
+The server is configured with [WINC_CmdDHCPSC](#AN_FUNC_AT_DHCP_DHCPSC) and is started and stopped together with the soft AP by [WINC_CmdWAP](#AN_FUNC_AT_WAP_WAP), if [ENABLED](#AN_FUNC_DHCPSC_STORE_ID_ENABLED) is set. While the server is running, its configuration cannot be changed.
+
+#### Address Pool
+
+If no pool start address is configured, the pool is placed in the half of the soft AP subnet that does not contain the WINCS02’s own address. The pool holds at most 32 leases. The soft AP subnet must be /29 or larger, and the pool start address must not be the network, broadcast or WINCS02 address, otherwise the soft AP fails to start.
+
+When the server is running, reading the configuration reports the active pool start, pool end and number of leases. When it is stopped, the configured pool start is reported.
+
+The gateway and DNS server addresses, if configured, are provided to clients in the DHCP offer.
+
+---
 ### Function Reference:
 
+<a id="AN_FUNC_AT_DHCP_DHCPSC"></a>
 #### WINC_CmdDHCPSC
 
 ##### Description
@@ -1548,7 +2665,7 @@ WINC_CMDDHCPSC_IDX_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDDHCPSC_ID_IGNORE_VAL.</p></td>
@@ -1556,27 +2673,35 @@ WINC_CMDDHCPSC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
-| Response       | Description   |
-|----------------|---------------|
-| \<ID\>,\<VAL\> | Read response |
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response                | Description       |
+|-------------------------|-------------------|
+| \<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| \<ID\>,\<VAL\>          | Read response     |
 
 **Response Format**
 
@@ -1595,6 +2720,20 @@ WINC_CMDDHCPSC_ID_IGNORE_VAL.</p></td>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
+</p></td>
+</tr>
 <tr>
 <td style="text-align: left;"><p>&lt;ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
@@ -1637,9 +2776,9 @@ WINC_CMDDHCPSC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -1658,17 +2797,17 @@ WINC_CMDDHCPSC_ID_IGNORE_VAL.</p></td>
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_DHCPSC_STORE_ID_ENABLED"></span> 1</p></td>
 <td style="text-align: left;"><p>ENABLED</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
-<td style="text-align: left;"><p>DCE’s internal DHCP Server<br />
+<td style="text-align: left;"><p>DHCP server enabled when the soft AP is started<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -1696,7 +2835,7 @@ WINC_CMDDHCPSC_ID_IGNORE_VAL.</p></td>
 <td style="text-align: left;"><p>POOL_START</p></td>
 <td style="text-align: left;"><p>IPV4ADDR<br />
 </p></td>
-<td style="text-align: left;"><p>Start address of DHCP server pool<br />
+<td style="text-align: left;"><p>Start address of DHCP server pool (0 = automatic)<br />
 <br />
 Unsigned 32-bit value<br />
 Format of IPv4 address is<br />
@@ -1708,7 +2847,7 @@ A1|A2|A3|A4 = A1.A2.A3.A4<br />
 <td style="text-align: left;"><p>POOL_END</p></td>
 <td style="text-align: left;"><p>IPV4ADDR<br />
 (Read Only)</p></td>
-<td style="text-align: left;"><p>End address of DHCP server pool<br />
+<td style="text-align: left;"><p>End address of the active DHCP server pool (read only, while running)<br />
 <br />
 Unsigned 32-bit value<br />
 Format of IPv4 address is<br />
@@ -1720,7 +2859,7 @@ A1|A2|A3|A4 = A1.A2.A3.A4<br />
 <td style="text-align: left;"><p>POOL_LEASES</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 (Read Only)</p></td>
-<td style="text-align: left;"><p>Number of leases<br />
+<td style="text-align: left;"><p>Number of leases in the active pool (read only, while running)<br />
 <br />
 Unsigned 16-bit value<br />
 </p></td>
@@ -1759,7 +2898,7 @@ A1|A2|A3|A4 = A1.A2.A3.A4<br />
 
 #### Server Address Configuration
 
-There are three methods available to configure the DNS servers used by the DCE.
+There are three methods available to configure the DNS servers used by the device.
 
 1.  Manually configured via [WINC_CmdDNSC](#AN_FUNC_AT_DNS_DNSC) option [DNS_SVR](#AN_FUNC_DNSC_STORE_ID_DNS_SVR).
 
@@ -1773,7 +2912,7 @@ Switching between manual and automatic configuration is performed by [WINC_CmdDN
 
 The supported query types are listed in [WINC_CmdDNSRESOLV](#AN_FUNC_AT_DNS_DNSRESOLV) parameter [type](#AN_FUNC_AT_DNS_DNSRESOLV_TYPE), other types may be specified as well. For unknown type the [WINC_AEC_ID_DNSRESOLV](#AN_AEC_AT_DNS_DNSRESOLV) response will simply include the undecoded RR data.
 
-The DNS query ANY is indirectly supported, it has generally been deprecated as a DNS query type and some servers do not respond to it. If the ANY query is specified the DCE will generate two separate queries for A and AAAA records. When generating the queries for ANY, the DCE will use the configuration of [WINC_CmdDNSC](#AN_FUNC_AT_DNS_DNSC) option [DNS_PROTO_PREF](#AN_FUNC_DNSC_STORE_ID_DNS_PROTO_PREF) to determine selection and order of A and AAAA queries.
+The DNS query ANY is indirectly supported, it has generally been deprecated as a DNS query type and some servers do not respond to it. If the ANY query is specified the device will generate two separate queries for A and AAAA records. When generating the queries for ANY, the device will use the configuration of [WINC_CmdDNSC](#AN_FUNC_AT_DNS_DNSC) option [DNS_PROTO_PREF](#AN_FUNC_DNSC_STORE_ID_DNS_PROTO_PREF) to determine selection and order of A and AAAA queries.
 
 > [!NOTE]
 > [DNS_PROTO_PREF](#AN_FUNC_DNSC_STORE_ID_DNS_PROTO_PREF) specifies the order of queries made, it does not control the order of responses received.
@@ -1795,40 +2934,44 @@ The default connection method is to use UDP to port 53 of the servers configured
 
 ##### DNS over UDP
 
-For queries to be sent via UDP [WINC_CmdDNSC](#AN_FUNC_AT_DNS_DNSC) option [DNS_CONN_PREF](#AN_FUNC_DNSC_STORE_ID_DNS_CONN_PREF) must be set to 0 (UDP/TLS). All connections to the configured servers will now be via UDP.
+For queries to be sent via UDP, [WINC_CmdDNSC](#AN_FUNC_AT_DNS_DNSC) option [DNS_CONN_PREF](#AN_FUNC_DNSC_STORE_ID_DNS_CONN_PREF) must be set to 0 (UDP/TLS) and [TLS_CONF](#AN_FUNC_DNSC_STORE_ID_TLS_CONF) must be 0. These are the defaults.
 
 The UDP port on the server used for queries will be set by [DNS_SRV_PORT](#AN_FUNC_DNSC_STORE_ID_DNS_SRV_PORT) which defaults to 53.
 
 ##### DNS over TCP
 
-For queries to be sent via TCP [WINC_CmdDNSC](#AN_FUNC_AT_DNS_DNSC) option [DNS_CONN_PREF](#AN_FUNC_DNSC_STORE_ID_DNS_CONN_PREF) must be set to 1 (TCP/TLS). All connections to the configured servers will now be via TCP.
+For queries to be sent via TCP, [WINC_CmdDNSC](#AN_FUNC_AT_DNS_DNSC) option [DNS_CONN_PREF](#AN_FUNC_DNSC_STORE_ID_DNS_CONN_PREF) must be set to 1 (TCP/TLS) and [TLS_CONF](#AN_FUNC_DNSC_STORE_ID_TLS_CONF) must be 0.
 
 The TCP port on the server used for queries will be set by [DNS_SRV_PORT](#AN_FUNC_DNSC_STORE_ID_DNS_SRV_PORT) which defaults to 53.
 
-Option [DNS_CONN_IDLE_TIMEOUT](#AN_FUNC_DNSC_STORE_ID_DNS_CONN_IDLE_TIMEOUT) can be used to set an idle timeout, the DNC module will request the IDLE timeout from the DNS server and honour that time period.
+Option [DNS_CONN_IDLE_TIMEOUT](#AN_FUNC_DNSC_STORE_ID_DNS_CONN_IDLE_TIMEOUT) can be used to set an idle timeout, the DNS module will request the IDLE timeout from the DNS server and honour that time period.
 
 ##### DNS over TLS
 
-For queries to be sent via TLS [WINC_CmdDNSC](#AN_FUNC_AT_DNS_DNSC) option [DNS_CONN_PREF](#AN_FUNC_DNSC_STORE_ID_DNS_CONN_PREF) must be set to 1 (TCP/TLS). All connections to the configured servers will now be via TLS.
+For queries to be sent via TLS, [WINC_CmdDNSC](#AN_FUNC_AT_DNS_DNSC) option [DNS_CONN_PREF](#AN_FUNC_DNSC_STORE_ID_DNS_CONN_PREF) must be set to 1 (TCP/TLS) and [TLS_CONF](#AN_FUNC_DNSC_STORE_ID_TLS_CONF) must be set to a TLS configuration index (see [WINC_CmdTLSC](#AN_FUNC_AT_TLS_TLSC)). DTLS ([DNS_CONN_PREF](#AN_FUNC_DNSC_STORE_ID_DNS_CONN_PREF) set to 0 with a TLS configuration) is not supported.
+
+The TLS configuration must allow the DNS server to be authenticated. By default this requires a CA certificate and the server’s domain name to be configured; see [TLS](#AN_MOD_TLS).
+
+When TLS is used, queries are sent only to the first configured DNS server.
 
 The TLS port on the server used for queries will be set by [DNS_SRV_SECURE_PORT](#AN_FUNC_DNSC_STORE_ID_DNS_SRV_SECURE_PORT) which defaults to 853.
 
-Option [DNS_CONN_IDLE_TIMEOUT](#AN_FUNC_DNSC_STORE_ID_DNS_CONN_IDLE_TIMEOUT) can be used to set an idle timeout, the DNC module will request the IDLE timeout from the DNS server and honour that time period.
+Option [DNS_CONN_IDLE_TIMEOUT](#AN_FUNC_DNSC_STORE_ID_DNS_CONN_IDLE_TIMEOUT) can be used to set an idle timeout, the DNS module will request the IDLE timeout from the DNS server and honour that time period.
 
 ---
 #### DNSSEC Support
 
 Support for DNSSEC is configured by [WINC_CmdDNSC](#AN_FUNC_AT_DNS_DNSC) option [DNS_DNSSEC_MODE](#AN_FUNC_DNSC_STORE_ID_DNS_DNSSEC_MODE) which offers three possible modes of operation:
 
-1.  No support, the DO bit of EDNS0 extended flags is not set indicating that the DCE is unaware of DNSSEC operations.
+1.  No support, the DO bit of EDNS0 extended flags is not set indicating that the device is unaware of DNSSEC operations.
 
-2.  DNSSEC aware, this sets the DO bit of EDNS0 extended flags to indicate that DNSSEC RRs should be sent in response to queries. These RRs will be past the to DTE for further processing.
+2.  DNSSEC aware, this sets the DO bit of EDNS0 extended flags to indicate that DNSSEC RRs should be sent in response to queries. These RRs will be passed to the application for further processing.
 
 3.  DNSSEC authenticated answer only. In addition to the previous state the DNS module will not process any query responses which do not have either the AA bit set (indicating the DNS server is an authority for the domain) or the AD bit set (indicating the server has authenticated the response).
 
 #### Cache Control
 
-Query responses are held in a small answer cache to speed up further queries. Records are held in the cache based on the TTL value specified in the records. In addition the DTE can set a cache timeout via [WINC_CmdDNSC](#AN_FUNC_AT_DNS_DNSC) option [DNS_CACHE_TTL](#AN_FUNC_DNSC_STORE_ID_DNS_CACHE_TTL) which, if lower than a response TTL, will override it causing records to be expired from the cache sooner.
+Query responses are held in a small answer cache to speed up further queries. Records are held in the cache based on the TTL value specified in the records. In addition the application can set a cache timeout via [WINC_CmdDNSC](#AN_FUNC_AT_DNS_DNSC) option [DNS_CACHE_TTL](#AN_FUNC_DNSC_STORE_ID_DNS_CACHE_TTL) which, if lower than a response TTL, will override it causing records to be expired from the cache sooner.
 
 #### MDNS Support
 
@@ -1881,7 +3024,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDDNSC_ID_IGNORE_VAL.</p></td>
@@ -1889,23 +3032,30 @@ WINC_CMDDNSC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response       | Description   |
 |----------------|---------------|
@@ -1970,9 +3120,9 @@ WINC_CMDDNSC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -1996,7 +3146,7 @@ WINC_CMDDNSC_ID_IGNORE_VAL.</p></td>
 <td style="text-align: left;"><p>IPV4ADDR<br />
 IPV6ADDR<br />
 </p></td>
-<td style="text-align: left;"><p>DNS server IP address<br />
+<td style="text-align: left;"><p>DNS server IP address. 1.0-1.1 configured (writable), 1.0-1.3 active (read only)<br />
 <br />
 Unsigned 32-bit value<br />
 Format of IPv4 address is<br />
@@ -2005,7 +3155,7 @@ Format of IPv6 address is<br />
 A1|…​|A16 = A1A2::A15A16<br />
 This is a multiple value parameter<br />
 with an ID range 1.0 to 1.3<br />
-</p></td>
+See <a href="#AN_NOTE_DNSC_DNS_SVR">DNS Servers</a> below.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p><span id="AN_FUNC_DNSC_STORE_ID_DNS_AUTO"></span> 2</p></td>
@@ -2016,9 +3166,9 @@ with an ID range 1.0 to 1.3<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -2060,9 +3210,9 @@ Unsigned 16-bit value<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -2106,11 +3256,11 @@ Unsigned 16-bit value<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_DNSC_STORE_ID_TLS_CONF"></span> 7</p></td>
 <td style="text-align: left;"><p>TLS_CONF</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>TLS configuration index (see +TLSC)<br />
+<td style="text-align: left;"><p>TLS configuration index (see WINC_CmdTLSCDA). 0 disables TLS<br />
 <br />
 Valid range is 0 to 4<br />
 </p></td>
@@ -2124,9 +3274,9 @@ Valid range is 0 to 4<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -2179,13 +3329,13 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>DNS_CONN_PREF</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
-<td style="text-align: left;"><p>Connection preference<br />
+<td style="text-align: left;"><p>Connection preference. TLS is used if TLS_CONF is set<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -2217,9 +3367,9 @@ Positive unsigned 16-bit value<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -2264,6 +3414,17 @@ Unsigned 16-bit value<br />
 </tr>
 </tbody>
 </table>
+
+<a id="AN_NOTE_DNSC_DNS_SVR"></a>
+**DNS Servers**
+
+[DNS_SVR](#AN_FUNC_DNSC_STORE_ID_DNS_SVR) holds two lists:
+
+- **Configured servers**, indices 1.0 and 1.1. These can be set, and are reported while the network interface is down. They are used when [DNS_AUTO](#AN_FUNC_DNSC_STORE_ID_DNS_AUTO) is 0.
+
+- **Active servers**, indices 1.0 to 1.3. These are read only and reported while the network interface is up. They contain the servers currently in use, from the configured list or from DHCP / router advertisements.
+
+Setting [DNS_SVR](#AN_FUNC_DNSC_STORE_ID_DNS_SVR) without an index adds the address to the next free configured slot; this fails if both slots are in use. Setting it to 0.0.0.0 without an index removes all configured servers.
 
 ---
 <a id="AN_FUNC_AT_DNS_DNSRESOLV"></a>
@@ -2319,11 +3480,18 @@ This function is used to resolve domain names via DNS.
 <tr>
 <td style="text-align: left;"><p>lenQueryName</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pQueryName.<br />
+<td style="text-align: left;"><p>Length of pQueryName in bytes, strings are not NUL terminated so the length must not include a terminator.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
 
 ---
 ### AEC Reference:
@@ -2375,9 +3543,9 @@ This function is used to resolve domain names via DNS.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -2455,7 +3623,7 @@ This function is used to resolve domain names via DNS.
 <tr>
 <td style="text-align: left;"><p>255</p></td>
 <td style="text-align: left;"><p>ANY</p></td>
-<td style="text-align: left;"><p>Unspecified.</p></td>
+<td style="text-align: left;"><p>A and/or AAAA (DNSERR only).</p></td>
 </tr>
 </tbody>
 </table>
@@ -2677,7 +3845,7 @@ Unsigned 32-bit value<br />
 <td style="text-align: left;"><p>&lt;SIG_EXPIRE&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>Signature ixpiration<br />
+<td style="text-align: left;"><p>Signature expiration<br />
 <br />
 Unsigned 32-bit value<br />
 </p></td>
@@ -2729,9 +3897,9 @@ Unsigned 16-bit value<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -2803,9 +3971,9 @@ Unsigned 16-bit value<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -2883,7 +4051,7 @@ Unsigned 16-bit value<br />
 <tr>
 <td style="text-align: left;"><p>255</p></td>
 <td style="text-align: left;"><p>ANY</p></td>
-<td style="text-align: left;"><p>Unspecified.</p></td>
+<td style="text-align: left;"><p>A and/or AAAA (DNSERR only).</p></td>
 </tr>
 </tbody>
 </table>
@@ -3234,9 +4402,9 @@ The info sub-command returns information on the filesystem.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -3271,9 +4439,9 @@ The info sub-command returns information on the filesystem.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -3325,11 +4493,18 @@ WINC_CMDFSOP_FILETYPE_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>lenOptFilename</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pOptFilename.<br />
+<td style="text-align: left;"><p>Length of pOptFilename in bytes, strings are not NUL terminated so the length must not include a terminator.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response                               | Description                    |
 |----------------------------------------|--------------------------------|
@@ -3361,9 +4536,9 @@ WINC_CMDFSOP_FILETYPE_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -3409,9 +4584,9 @@ WINC_CMDFSOP_FILETYPE_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -3478,6 +4653,7 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_FS_FLFS_FSLOAD"></a>
 #### WINC_CmdFSLOAD
 
 ##### Description
@@ -3523,9 +4699,9 @@ This operation uses the WINC_CMD_ID_FS command request, therefore all status and
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -3575,7 +4751,7 @@ This operation uses the WINC_CMD_ID_FS command request, therefore all status and
 <tr>
 <td style="text-align: left;"><p>lenOptFilename</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pOptFilename.<br />
+<td style="text-align: left;"><p>Length of pOptFilename in bytes, strings are not NUL terminated so the length must not include a terminator.<br />
 </p></td>
 </tr>
 <tr>
@@ -3588,6 +4764,13 @@ WINC_CMDFSLOAD_FILELENGTH_IGNORE_VAL.</p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response               | Description      |
 |------------------------|------------------|
@@ -3618,9 +4801,9 @@ WINC_CMDFSLOAD_FILELENGTH_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -3716,9 +4899,9 @@ This operation uses the WINC_CMD_ID_FS command request, therefore all status and
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -3767,11 +4950,18 @@ This operation uses the WINC_CMD_ID_FS command request, therefore all status and
 <tr>
 <td style="text-align: left;"><p>lenFilename</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pFilename.<br />
+<td style="text-align: left;"><p>Length of pFilename in bytes, strings are not NUL terminated so the length must not include a terminator.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response               | Description      |
 |------------------------|------------------|
@@ -3802,9 +4992,9 @@ This operation uses the WINC_CMD_ID_FS command request, therefore all status and
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -3918,7 +5108,7 @@ WINC_CMDFSTSFR_BLOCK_NUM_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>lenOptData</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pOptData.<br />
+<td style="text-align: left;"><p>Length of pOptData in bytes.<br />
 </p></td>
 </tr>
 <tr>
@@ -3931,6 +5121,13 @@ WINC_CMDFSTSFR_CRC_IGNORE_VAL.</p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response | Description |
 |----|----|
@@ -3969,7 +5166,7 @@ Positive unsigned 16-bit value<br />
 </p></td>
 <td style="text-align: left;"><p>Block number<br />
 <br />
-Positive unsigned 16-bit value<br />
+Unsigned 8-bit value<br />
 </p></td>
 </tr>
 <tr>
@@ -3999,7 +5196,7 @@ BYTE_ARRAY<br />
 
 This function performs a filesystem transfer operation.
 
-This transfer operation uses the WINC_CMD_ID_FSTSR command request, therefore all status and response messages received will be using the WINC_CMD_ID_FSTSFR command ID. Messages are further identified by their \<TSFR_HANDLE\> response value indicating transfer context used.
+This transfer operation uses the WINC_CMD_ID_FSTSFR command request, therefore all status and response messages received will be using the WINC_CMD_ID_FSTSFR command ID. Messages are further identified by their \<TSFR_HANDLE\> response value indicating transfer context used.
 
     bool WINC_CmdFSRECV
     (
@@ -4053,6 +5250,13 @@ WINC_CMDFSRECV_DATA_LENGTH_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
 | Response | Description |
 |----|----|
 | \<TSFR_HANDLE\>,\<BLOCK_NUM\>,\<BYTES_REMAIN\> | FS-TSFR load response |
@@ -4090,7 +5294,7 @@ Positive unsigned 16-bit value<br />
 </p></td>
 <td style="text-align: left;"><p>Block number<br />
 <br />
-Positive unsigned 16-bit value<br />
+Unsigned 8-bit value<br />
 </p></td>
 </tr>
 <tr>
@@ -4152,9 +5356,9 @@ BYTE_ARRAY<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -4200,9 +5404,9 @@ BYTE_ARRAY<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -4272,7 +5476,6 @@ sequenceDiagram
     Note right of APP: Request list of certificates
     APP->>API: WINC_CmdFSOP(2,1)
     API->>APP: Response:WINC_CMD_ID_FS(2,1,"AmazonRootCA1")
-    API->>APP: Response:WINC_CMD_ID_FS(2,1,"BaltimoreCyberTrustRoot")
     API->>APP: Response:WINC_CMD_ID_FS(2,1,"DigiCert")
     API->>APP: Response:WINC_CMD_ID_FS(2,1,"DigiCertGlobalRootG2")
     API->>APP: Response:WINC_CMD_ID_FS(2,1,"DigiCertSHA2")
@@ -4408,8 +5611,281 @@ sequenceDiagram
 <a id="AN_MOD_MQTT"></a>
 ## MQTT (Module ID = 8)
 
+### Introduction
+
+The WINCS02 supports MQTT v3.1.1 and MQTT v5.0 client functionality via its API, enabling communication with MQTT brokers for IoT applications, telemetry, messaging, and cloud integration.
+
+#### Key Features
+
+##### Protocol Support
+
+Both MQTT v3.1.1 and MQTT v5.0 protocols are supported. MQTT v5.0 includes enhanced features such as properties, reason codes, and improved error reporting.
+
+##### Quality of Service (QoS)
+
+All three QoS levels are supported:
+
+- QoS 0 (At most once) - Fire and forget, no acknowledgment
+
+- QoS 1 (At least once) - Guaranteed delivery with acknowledgment
+
+- QoS 2 (Exactly once) - Guaranteed single delivery with four-way handshake
+
+##### TLS Security
+
+Secure MQTT connections (MQTTS) over TLS are supported by configuring a TLS context before connecting.
+
+##### Large Message Handling
+
+The device can send and receive messages larger than its internal buffers through message fragmentation. The MQTT stack handles reassembly of multi-chunk messages automatically.
+
+---
+#### Connecting to a Broker
+
+To establish an MQTT connection:
+
+1.  Configure the broker parameters using [WINC_CmdMQTTC](#AN_FUNC_AT_MQTT_MQTTC):
+
+    - [BROKER_ADDR](#AN_FUNC_MQTTC_STORE_ID_BROKER_ADDR) - Broker hostname or IP address
+
+    - [BROKER_PORT](#AN_FUNC_MQTTC_STORE_ID_BROKER_PORT) - Broker port (typically 1883 for MQTT, 8883 for MQTTS)
+
+    - [CLIENT_ID](#AN_FUNC_MQTTC_STORE_ID_CLIENT_ID) - Unique client identifier
+
+    - [USERNAME](#AN_FUNC_MQTTC_STORE_ID_USERNAME) and [PASSWORD](#AN_FUNC_MQTTC_STORE_ID_PASSWORD) - Authentication credentials (if required)
+
+2.  For secure connections, configure TLS using [WINC_CmdMQTTC](#AN_FUNC_AT_MQTT_MQTTC) parameter [TLS_CONF](#AN_FUNC_MQTTC_STORE_ID_TLS_CONF) to reference a TLS context configured via [TLSC](#AN_MOD_TLS).
+
+3.  Connect to the broker using [WINC_CmdMQTTCONN](#AN_FUNC_AT_MQTT_MQTTCONN).
+
+4.  Monitor the [WINC_AEC_ID_MQTTCONN](#AN_AEC_AT_MQTT_MQTTCONN) AEC for connection status.
+
+---
+#### Publishing Messages
+
+Publish messages to topics using [WINC_CmdMQTTPUB](#AN_FUNC_AT_MQTT_MQTTPUB). The function accepts the topic name, QoS level, retain flag, and message payload.
+
+##### Fragmented Publish Mode
+
+For payloads exceeding the internal buffer limit, use fragmented publish to send large messages in multiple parts. The firmware reassembles fragments before transmitting a single MQTT PUBLISH packet.
+
+###### Starting a Fragment Sequence (First Fragment)
+
+Call [WINC_CmdMQTTPUB](#AN_FUNC_AT_MQTT_MQTTPUB) with [frag](#AN_FUNC_AT_MQTT_MQTTPUB_FRAG)=1:
+
+- [frag](#AN_FUNC_AT_MQTT_MQTTPUB_FRAG)=1 indicates the first fragment of a new sequence
+
+- [qos](#AN_FUNC_AT_MQTT_MQTTPUB_QOS), [retain](#AN_FUNC_AT_MQTT_MQTTPUB_RETAIN), and [topicNameId](#AN_FUNC_AT_MQTT_MQTTPUB_TOPIC_NAME_ID) are specified only in the first fragment
+
+- Topic can be a string (`WINC_TYPE_STRING`) or an integer topic alias (`WINC_TYPE_INTEGER`, MQTT v5.0)
+
+- [pTopicPayload](#AN_FUNC_AT_MQTT_MQTTPUB_TOPIC_PAYLOAD) contains the first fragment of the payload
+
+###### Continuation Fragments
+
+Call [WINC_CmdMQTTPUBFRAG](#AN_FUNC_AT_MQTT_MQTTPUBFRAG) for all subsequent fragments:
+
+- [optFrag](#AN_FUNC_AT_MQTT_MQTTPUBFRAG_FRAG) = fragment number (must match expected sequence, 2-64)
+
+- [optComp](#AN_FUNC_AT_MQTT_MQTTPUBFRAG_COMP) = 0 for continuation, 1 for final fragment
+
+- [pOptTopicPayload](#AN_FUNC_AT_MQTT_MQTTPUBFRAG_TOPIC_PAYLOAD) contains the fragment payload
+
+###### Query Fragment State
+
+Call [WINC_CmdMQTTPUBFRAG](#AN_FUNC_AT_MQTT_MQTTPUBFRAG) with [optFrag](#AN_FUNC_AT_MQTT_MQTTPUBFRAG_FRAG) set to `WINC_CMDMQTTPUBFRAG_FRAG_IGNORE_VAL` to query the current fragment accumulation state.
+
+###### Publish Responses
+
+Responses to [WINC_CmdMQTTPUB](#AN_FUNC_AT_MQTT_MQTTPUB) and [WINC_CmdMQTTPUBFRAG](#AN_FUNC_AT_MQTT_MQTTPUBFRAG) are received with the response ID of [WINC_CmdMQTTPUB](#AN_FUNC_AT_MQTT_MQTTPUB):
+
+- A single-message publish, or the final fragment, with QoS 0 produces no response; only the command status is received.
+
+- With QoS 1 or 2, the packet ID is returned. The same packet ID appears in the subsequent [WINC_AEC_ID_MQTTPUBACK](#AN_AEC_AT_MQTT_MQTTPUBACK) or [WINC_AEC_ID_MQTTPUBCOMP](#AN_AEC_AT_MQTT_MQTTPUBCOMP) AEC.
+
+- Each non-final fragment returns the next expected fragment number and the total bytes accumulated.
+
+- A fragment state query returns the next expected fragment number, the total bytes accumulated and the topic name, or no response if no fragment sequence is in progress.
+
+###### Fragmentation Limits
+
+| **Constraint**      | **Value**           | **Notes**                 |
+|---------------------|---------------------|---------------------------|
+| Maximum fragments   | 64                  | Per message               |
+| Maximum packet size | 16,384 bytes (16KB) | Advertised protocol limit |
+| Timeout             | 30 seconds          | Between fragments         |
+
+> [!NOTE]
+> The 16KB limit applies to the total MQTT packet size, which includes the topic name, MQTT v5 properties (if enabled), and payload. With a short topic and no properties, payloads up to ~16KB are possible. Longer topics or additional properties reduce the available payload space.
+
+###### Error Handling
+
+- Out-of-sequence fragments are rejected and the context is cleaned up
+
+- Starting a new sequence ([frag](#AN_FUNC_AT_MQTT_MQTTPUB_FRAG)=1) while one is in progress is rejected
+
+- Continuation fragments ([optFrag](#AN_FUNC_AT_MQTT_MQTTPUBFRAG_FRAG)\>1) without a prior first fragment are rejected
+
+- Invalid QoS values (\>2) are rejected before allocating context
+
+- Exceeding the maximum fragment count or payload size returns an error
+
+---
+#### Publish Completion Events
+
+When a publish operation completes, the device emits an Asynchronous Event Code (AEC) to signal completion. This provides reliable synchronization for back-to-back publishes without requiring arbitrary delays.
+
+| **QoS** | **AEC** | **Meaning** |
+|----|----|----|
+| 0 | [WINC_AEC_ID_MQTTPUBSENT](#AN_AEC_AT_MQTT_MQTTPUBSENT) | Publish sent to broker (fire-and-forget complete) |
+| 1 | [WINC_AEC_ID_MQTTPUBACK](#AN_AEC_AT_MQTT_MQTTPUBACK) | PUBACK received from broker |
+| 2 | [WINC_AEC_ID_MQTTPUBCOMP](#AN_AEC_AT_MQTT_MQTTPUBCOMP) | PUBCOMP received from broker (4-way handshake complete) |
+
+If a publish fails, [WINC_AEC_ID_MQTTPUBERR](#AN_AEC_AT_MQTT_MQTTPUBERR) is emitted.
+
+> [!IMPORTANT]
+> Wait for the completion AEC before sending the next publish command. The device can only process one publish at a time. Sending a new publish while the previous one is in the PUBLISHING state will result in an error.
+
+#### Subscribing and Receiving Messages
+
+Subscribe to topics using [WINC_CmdMQTTSUB](#AN_FUNC_AT_MQTT_MQTTSUB). When messages arrive on subscribed topics, the [WINC_AEC_ID_MQTTSUBRX](#AN_AEC_AT_MQTT_MQTTSUBRX) AEC is emitted.
+
+##### Inline vs Buffered Message Delivery
+
+The [READ_THRESHOLD](#AN_FUNC_MQTTC_STORE_ID_READ_THRESHOLD) parameter sets the largest message, in bytes, that is delivered inline. The default is 128 bytes.
+
+- **Inline delivery**: a received message whose length is less than or equal to the threshold is included directly in the [WINC_AEC_ID_MQTTSUBRX](#AN_AEC_AT_MQTT_MQTTSUBRX) AEC.
+
+- **Buffered delivery**: a received message longer than the threshold is held by the device. The [WINC_AEC_ID_MQTTSUBRX](#AN_AEC_AT_MQTT_MQTTSUBRX) AEC reports only the message ID and length, and the application must use [WINC_CmdMQTTSUBRD](#AN_FUNC_AT_MQTT_MQTTSUBRD) to retrieve the data.
+
+Messages received in more than one part are always buffered, whatever the threshold. Messages larger than approximately 1 KB will therefore always require [WINC_CmdMQTTSUBRD](#AN_FUNC_AT_MQTT_MQTTSUBRD).
+
+> [!NOTE]
+> Setting the threshold to 0 causes all received messages to be buffered regardless of size, which is useful when consistent handling of all messages is required.
+
+---
+#### Maximum Packet Size (MQTT v5.0)
+
+MQTT v5.0 introduces the Maximum Packet Size property (ID 39), which informs the broker of the largest MQTT packet the client can receive. This property is configured via [WINC_CmdMQTTPROPTX](#AN_FUNC_AT_MQTT_MQTTPROPTX) and controlled by [WINC_CmdMQTTPROPTXS](#AN_FUNC_AT_MQTT_MQTTPROPTXS).
+
+##### Default Behaviour
+
+- The Maximum Packet Size property defaults to 16384 bytes (16KB).
+
+- The property is **enabled by default** and will be included in the CONNECT packet.
+
+- The broker will respect this limit and will not send packets larger than the specified size.
+
+##### Configuration Options
+
+| **Action**                    | **Function Call**      |
+|-------------------------------|------------------------|
+| Query current value           | `MQTTPROPTX(39)`       |
+| Set to 8KB                    | `MQTTPROPTX(39, 8192)` |
+| Disable property in CONNECT   | `MQTTPROPTXS(39, 0)`   |
+| Re-enable property in CONNECT | `MQTTPROPTXS(39, 1)`   |
+
+##### Validation Rules
+
+- The value cannot be set to 0 (zero).
+
+- The value cannot exceed the system maximum of 16384 bytes.
+
+##### Internal Enforcement
+
+The device enforces the packet size limit internally regardless of broker behaviour:
+
+- When the property is **enabled** in CONNECT: The configured value is enforced. The broker knows the limit and should not exceed it, but the device will reject oversized packets as a safety measure.
+
+- When the property is **disabled** in CONNECT: The system maximum (16384 bytes) is enforced. Since the broker was not informed of any limit, the device uses its maximum capability.
+
+- For **MQTT v3.1.1** connections: The system maximum (16384 bytes) is always enforced, as v3.1.1 does not support the Maximum Packet Size property.
+
+> [!NOTE]
+> If you configure a lower Maximum Packet Size value, then disable the property and connect to a different broker, the device will use the system maximum (16KB) for enforcement - not your previously configured value. This ensures the device accepts the largest packets possible when the broker has not been informed of any limit.
+
+---
+##### Oversized Received Messages
+
+A broker that does not honour the Maximum Packet Size property - or that was never told the limit because the property was disabled in CONNECT - may still forward a message larger than the device can buffer. Such a message cannot be delivered, but it also cannot simply be abandoned: the remainder of the payload would be left in the socket, leaving the MQTT byte stream out of frame.
+
+The device therefore handles an undeliverable received message as follows:
+
+1.  The payload is read from the connection and discarded, keeping the MQTT stream framed and allowing the QoS 1/QoS 2 acknowledgement to be sent.
+
+2.  The [WINC_AEC_ID_MQTTSUBRXERR](#AN_AEC_AT_MQTT_MQTTSUBRXERR) AEC is emitted, reporting why the message was dropped along with the topic, packet identifier and total message length.
+
+3.  Once the payload has been fully drained, the session is closed cleanly with an MQTT v5.0 DISCONNECT carrying reason code `0x95` (Packet too large) for an oversized message, or `0x83` (Implementation specific error) for the other drop reasons.
+
+**The reported reasons are:**
+
+| **REASON** | **Meaning**                                                  |
+|------------|--------------------------------------------------------------|
+| 1          | The message exceeds the maximum packet size.                 |
+| 2          | There was insufficient memory to buffer the message.         |
+| 3          | The message did not match any active subscription.           |
+| 4          | The message length was inconsistent with the receive buffer. |
+
+No data from a dropped message is delivered, and subsequent messages are unaffected. The session must be re-established after the disconnection, and any subscriptions re-created, as the subscription list is cleared when the session closes.
+
+> [!NOTE]
+> `MQTTPROPTXS(39, 1)` (the default) is the way to avoid this situation altogether: when the broker is told the limit, it will not forward an oversized message in the first place. `MQTTPROPTX(39, \<VALUE\>)` lowers the advertised limit below the 16KB system maximum if the application cannot handle messages that large.
+
+---
+#### MQTT v5.0 Properties
+
+MQTT v5.0 supports additional properties that can be included in various packet types. Properties are managed using:
+
+- [WINC_CmdMQTTPROPTX](#AN_FUNC_AT_MQTT_MQTTPROPTX) - Configure property values to transmit
+
+- [WINC_CmdMQTTPROPTXS](#AN_FUNC_AT_MQTT_MQTTPROPTXS) - Select which properties to include in transmitted packets
+
+- [WINC_CmdMQTTPROPRX](#AN_FUNC_AT_MQTT_MQTTPROPRX) - Query properties received from the broker
+
+Properties are only added to packets where they are applicable according to the MQTT v5.0 specification.
+
+---
+#### Typical Usage Flow
+
+A typical MQTT session follows this pattern:
+
+1.  Configure Wi-Fi and establish network connectivity
+
+2.  (Optional) Configure SNTP for accurate timestamps
+
+3.  Configure TLS context if using secure connection
+
+4.  Configure MQTT client parameters
+
+5.  (Optional) Adjust MQTT v5.0 properties
+
+6.  Connect to the broker
+
+7.  Subscribe to topics of interest
+
+8.  Publish messages and/or receive subscribed messages
+
+9.  Disconnect when finished
+
+---
+#### Troubleshooting
+
+##### Connection Failures
+
+Ensure the broker URL, port, and credentials are correct. For TLS connections, verify the CA certificate is loaded and the TLS context is properly configured.
+
+##### Message Size Errors
+
+If publishing fails, check that the hex-encoded payload plus command overhead does not exceed the command line limit. For received messages that appear truncated, check the Maximum Packet Size configuration.
+
+##### QoS 2 Timeouts
+
+QoS 2 requires a complete four-way handshake. Ensure network connectivity is stable and the broker supports QoS 2.
+
+---
 ### Function Reference:
 
+<a id="AN_FUNC_AT_MQTT_MQTTC"></a>
 #### WINC_CmdMQTTC
 
 ##### Description
@@ -4451,7 +5927,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDMQTTC_ID_IGNORE_VAL.</p></td>
@@ -4459,23 +5935,30 @@ WINC_CMDMQTTC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response       | Description   |
 |----------------|---------------|
@@ -4540,9 +6023,9 @@ WINC_CMDMQTTC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -4561,7 +6044,7 @@ WINC_CMDMQTTC_ID_IGNORE_VAL.</p></td>
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_MQTTC_STORE_ID_BROKER_ADDR"></span> 1</p></td>
 <td style="text-align: left;"><p>BROKER_ADDR</p></td>
 <td style="text-align: left;"><p>STRING<br />
 IPV4ADDR<br />
@@ -4576,7 +6059,7 @@ A1|…​|A16 = A1A2::A15A16<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>2</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_MQTTC_STORE_ID_BROKER_PORT"></span> 2</p></td>
 <td style="text-align: left;"><p>BROKER_PORT</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
@@ -4586,7 +6069,7 @@ Unsigned 16-bit value<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>3</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_MQTTC_STORE_ID_CLIENT_ID"></span> 3</p></td>
 <td style="text-align: left;"><p>CLIENT_ID</p></td>
 <td style="text-align: left;"><p>STRING<br />
 </p></td>
@@ -4595,7 +6078,7 @@ Maximum length of string is 64<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>4</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_MQTTC_STORE_ID_USERNAME"></span> 4</p></td>
 <td style="text-align: left;"><p>USERNAME</p></td>
 <td style="text-align: left;"><p>STRING<br />
 </p></td>
@@ -4604,7 +6087,7 @@ Maximum length of string is 128<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>5</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_MQTTC_STORE_ID_PASSWORD"></span> 5</p></td>
 <td style="text-align: left;"><p>PASSWORD</p></td>
 <td style="text-align: left;"><p>STRING<br />
 </p></td>
@@ -4623,11 +6106,11 @@ Valid range is 0 to 0x7FFF<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_MQTTC_STORE_ID_TLS_CONF"></span> 7</p></td>
 <td style="text-align: left;"><p>TLS_CONF</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>TLS configuration index (see +TLSC)<br />
+<td style="text-align: left;"><p>TLS configuration index (see WINC_CmdTLSCDA). 0 disables TLS<br />
 <br />
 Valid range is 0 to 4<br />
 </p>
@@ -4644,9 +6127,9 @@ Valid range is 0 to 4<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -4674,7 +6157,7 @@ Valid range is 0 to 4<br />
 <td style="text-align: left;"><p>READ_THRESHOLD</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
-<td style="text-align: left;"><p>Subscription read threshold<br />
+<td style="text-align: left;"><p>Largest received message size (in bytes) delivered inline, larger messages are buffered. Default is 128<br />
 <br />
 Unsigned 16-bit value<br />
 </p></td>
@@ -4691,11 +6174,14 @@ Unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_MQTT_MQTTCONN"></a>
 #### WINC_CmdMQTTCONN
 
 ##### Description
 
 This function is used to connect to an MQTT broker.
+
+When called with the clean parameter set to `WINC_CMDMQTTCONN_CLEAN_IGNORE_VAL`, the current connection state is reported asynchronously using the [WINC_AEC_ID_MQTTCONN](#AN_AEC_AT_MQTT_MQTTCONN) AEC, rather than as a command response.
 
     bool WINC_CmdMQTTCONN
     (
@@ -4731,9 +6217,9 @@ This function is used to connect to an MQTT broker.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -4761,7 +6247,15 @@ WINC_CMDMQTTCONN_CLEAN_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
+<a id="AN_FUNC_AT_MQTT_MQTTSUB"></a>
 #### WINC_CmdMQTTSUB
 
 ##### Description
@@ -4806,7 +6300,7 @@ This function is used to subscribe to an MQTT topic.
 <tr>
 <td style="text-align: left;"><p>lenTopicName</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pTopicName.<br />
+<td style="text-align: left;"><p>Length of pTopicName in bytes, strings are not NUL terminated so the length must not include a terminator.<br />
 </p></td>
 </tr>
 <tr>
@@ -4816,9 +6310,9 @@ This function is used to subscribe to an MQTT topic.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -4848,6 +6342,13 @@ This function is used to subscribe to an MQTT topic.
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
 
 ---
 #### WINC_CmdMQTTSUBLST
@@ -4881,6 +6382,13 @@ This function is used to list MQTT topic subscriptions.
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response               | Description         |
 |------------------------|---------------------|
@@ -4918,9 +6426,9 @@ This function is used to list MQTT topic subscriptions.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -4957,13 +6465,19 @@ This function is used to list MQTT topic subscriptions.
 
 ##### Description
 
-This function is used receive data from subscriptions.
+This function is used to receive data from subscriptions.
 
 The [WINC_CmdMQTTSUBRD](#AN_FUNC_AT_MQTT_MQTTSUBRD) function is used in conjunction with the setting of [READ_THRESHOLD](#AN_FUNC_MQTTC_STORE_ID_READ_THRESHOLD).
 
 When a message is received the API will emit a [WINC_AEC_ID_MQTTSUBRX](#AN_AEC_AT_MQTT_MQTTSUBRX) AEC, this will normally include the received data, however when a message is received which would exceed [READ_THRESHOLD](#AN_FUNC_MQTTC_STORE_ID_READ_THRESHOLD) the API will emit a [WINC_AEC_ID_MQTTSUBRX](#AN_AEC_AT_MQTT_MQTTSUBRX) AEC which includes a message ID and data length. This avoids saturating the application with data it may not be able to handle. The application must use this function to read the buffered message.
 
 Setting [READ_THRESHOLD](#AN_FUNC_MQTTC_STORE_ID_READ_THRESHOLD) to zero will cause all received messages to be buffered for reading using this function.
+
+Buffered messages are read in the order they were received; only the oldest buffered message for the topic can be read, and requesting a different message ID returns an error.
+
+A message may be read in several parts. If \<LENGTH\> is less than the remaining message data, only that many bytes are returned, and the next read of the same message ID continues from that point. The message is released once all of its data has been read. If no message is buffered for the topic, no data is returned.
+
+The length element of the response is the number of bytes returned by this read.
 
 > [!NOTE]
 > The message ID is only relevant for QoS1 and QoS2 subscriptions.
@@ -5007,7 +6521,7 @@ Setting [READ_THRESHOLD](#AN_FUNC_MQTTC_STORE_ID_READ_THRESHOLD) to zero will ca
 <tr>
 <td style="text-align: left;"><p>lenTopicName</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pTopicName.<br />
+<td style="text-align: left;"><p>Length of pTopicName in bytes, strings are not NUL terminated so the length must not include a terminator.<br />
 </p></td>
 </tr>
 <tr>
@@ -5025,9 +6539,16 @@ Setting [READ_THRESHOLD](#AN_FUNC_MQTTC_STORE_ID_READ_THRESHOLD) to zero will ca
 </tbody>
 </table>
 
-| Response                                    | Description          |
-|---------------------------------------------|----------------------|
-| \<MSG_ID\>,\<MSG_LENGTH\>,\<TOPIC_PAYLOAD\> | Read subscribed data |
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response                         | Description          |
+|----------------------------------|----------------------|
+| \<MSG_LENGTH\>,\<TOPIC_PAYLOAD\> | Read subscribed data |
 
 **Response Format**
 
@@ -5046,13 +6567,6 @@ Setting [READ_THRESHOLD](#AN_FUNC_MQTTC_STORE_ID_READ_THRESHOLD) to zero will ca
 </tr>
 </thead>
 <tbody>
-<tr>
-<td style="text-align: left;"><p>&lt;MSG_ID&gt;</p></td>
-<td style="text-align: left;"><p>INTEGER<br />
-</p></td>
-<td style="text-align: left;"><p>Message ID<br />
-</p></td>
-</tr>
 <tr>
 <td style="text-align: left;"><p>&lt;MSG_LENGTH&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
@@ -5114,23 +6628,31 @@ This function is used to unsubscribe from an MQTT topic.
 <tr>
 <td style="text-align: left;"><p>lenTopicName</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pTopicName.<br />
+<td style="text-align: left;"><p>Length of pTopicName in bytes, strings are not NUL terminated so the length must not include a terminator.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
+<a id="AN_FUNC_AT_MQTT_MQTTPUB"></a>
 #### WINC_CmdMQTTPUB
 
 ##### Description
 
-This function is used to publish a message.
+Publish a message (single or fragmented).
 
     bool WINC_CmdMQTTPUB
     (
         WINC_CMD_REQ_HANDLE handle
-        uint8_t dup
+        uint8_t frag
         uint8_t qos
         uint8_t retain
         WINC_TYPE typeTopicNameId
@@ -5162,47 +6684,21 @@ This function is used to publish a message.
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>dup</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_AT_MQTT_MQTTPUB_FRAG"></span>frag</p></td>
 <td style="text-align: left;"><p>uint8_t</p></td>
-<td style="text-align: left;"><p>Duplicate Message.<br />
-</p>
-<table>
-<colgroup>
-<col style="width: 14%" />
-<col style="width: 28%" />
-<col style="width: 57%" />
-</colgroup>
-<thead>
-<tr>
-<th style="text-align: left;">Value</th>
-<th style="text-align: left;">Label</th>
-<th style="text-align: left;">Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: left;"><p>0</p></td>
-<td style="text-align: left;"><p>NEW_MSG</p></td>
-<td style="text-align: left;"><p>New message.</p></td>
+<td style="text-align: left;"><p>Fragment Number (0=complete, 1=first, 2+=continuation).<br />
+</p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>1</p></td>
-<td style="text-align: left;"><p>DUP_MSG</p></td>
-<td style="text-align: left;"><p>Duplicate message.</p></td>
-</tr>
-</tbody>
-</table></td>
-</tr>
-<tr>
-<td style="text-align: left;"><p>qos</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_AT_MQTT_MQTTPUB_QOS"></span>qos</p></td>
 <td style="text-align: left;"><p>uint8_t</p></td>
 <td style="text-align: left;"><p>QoS.<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -5231,15 +6727,15 @@ This function is used to publish a message.
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>retain</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_AT_MQTT_MQTTPUB_RETAIN"></span>retain</p></td>
 <td style="text-align: left;"><p>uint8_t</p></td>
 <td style="text-align: left;"><p>Retain Message.<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -5265,23 +6761,23 @@ This function is used to publish a message.
 <tr>
 <td style="text-align: left;"><p>typeTopicNameId</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of topicNameId.<br />
+<td style="text-align: left;"><p>Type of topicNameId, topicNameId is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>topicNameId</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_AT_MQTT_MQTTPUB_TOPIC_NAME_ID"></span>topicNameId</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Topic Name or Alias.<br />
+<td style="text-align: left;"><p>Topic Name or Alias. For integer types topicNameId holds the value, for other types topicNameId is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenTopicNameId</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of topicNameId.<br />
+<td style="text-align: left;"><p>Length in bytes of the data topicNameId points to, ignored for integer types.<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>pTopicPayload</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_AT_MQTT_MQTTPUB_TOPIC_PAYLOAD"></span>pTopicPayload</p></td>
 <td style="text-align: left;"><p>const uint8_t*</p></td>
 <td style="text-align: left;"><p>Topic Payload.<br />
 </p></td>
@@ -5289,16 +6785,24 @@ This function is used to publish a message.
 <tr>
 <td style="text-align: left;"><p>lenTopicPayload</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pTopicPayload.<br />
+<td style="text-align: left;"><p>Length of pTopicPayload in bytes.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
-| Response      | Description         |
-|---------------|---------------------|
-|               | Publish (QoS 0)     |
-| \<PACKET_ID\> | Publish (QoS 1 & 2) |
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response                              | Description                    |
+|---------------------------------------|--------------------------------|
+| \<PACKET_ID\>                         | Publish (QoS 1 & 2)            |
+| \<FRAG\>,\<TOTAL_LEN\>                | Fragment accumulation feedback |
+| \<FRAG\>,\<TOTAL_LEN\>,\<TOPIC_NAME\> | Fragment state query           |
 
 **Response Format**
 
@@ -5322,6 +6826,184 @@ This function is used to publish a message.
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
 <td style="text-align: left;"><p>Packet ID<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;FRAG&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Next expected fragment number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;TOTAL_LEN&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Total accumulated bytes<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;TOPIC_NAME&gt;</p></td>
+<td style="text-align: left;"><p>STRING<br />
+</p></td>
+<td style="text-align: left;"><p>Topic Name<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+---
+<a id="AN_FUNC_AT_MQTT_MQTTPUBFRAG"></a>
+#### WINC_CmdMQTTPUBFRAG
+
+##### Description
+
+Publish a message (single or fragmented).
+
+    bool WINC_CmdMQTTPUBFRAG
+    (
+        WINC_CMD_REQ_HANDLE handle
+        int32_t optFrag
+        int32_t optComp
+        const uint8_t* pOptTopicPayload
+        size_t lenOptTopicPayload
+    )
+
+<table>
+<caption>Function Parameter Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>handle</p></td>
+<td style="text-align: left;"><p>WINC_CMD_REQ_HANDLE</p></td>
+<td style="text-align: left;"><p>Command request session handle.<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_AT_MQTT_MQTTPUBFRAG_FRAG"></span>optFrag</p></td>
+<td style="text-align: left;"><p>int32_t</p></td>
+<td style="text-align: left;"><p>Fragment Number (0=complete, 1=first, 2+=continuation).<br />
+</p>
+<p>optFrag will be ignored if its value is<br />
+WINC_CMDMQTTPUBFRAG_FRAG_IGNORE_VAL.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_AT_MQTT_MQTTPUBFRAG_COMP"></span>optComp</p></td>
+<td style="text-align: left;"><p>int32_t</p></td>
+<td style="text-align: left;"><p>Completion Flag.<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>MORE</p></td>
+<td style="text-align: left;"><p>More fragments follow.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>FINAL</p></td>
+<td style="text-align: left;"><p>Final fragment, publish now.</p></td>
+</tr>
+</tbody>
+</table>
+<p>optComp will be ignored if its value is<br />
+WINC_CMDMQTTPUBFRAG_COMP_IGNORE_VAL.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_AT_MQTT_MQTTPUBFRAG_TOPIC_PAYLOAD"></span>pOptTopicPayload</p></td>
+<td style="text-align: left;"><p>const uint8_t*</p></td>
+<td style="text-align: left;"><p>Topic Payload.<br />
+</p>
+<p>pOptTopicPayload will be ignored if its value is NULL.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>lenOptTopicPayload</p></td>
+<td style="text-align: left;"><p>size_t</p></td>
+<td style="text-align: left;"><p>Length of pOptTopicPayload in bytes.<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response                              | Description                    |
+|---------------------------------------|--------------------------------|
+| \<PACKET_ID\>                         | Publish (QoS 1 & 2)            |
+| \<FRAG\>,\<TOTAL_LEN\>                | Fragment accumulation feedback |
+| \<FRAG\>,\<TOTAL_LEN\>,\<TOPIC_NAME\> | Fragment state query           |
+
+**Response Format**
+
+<table>
+<caption>Response Element Description</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;PACKET_ID&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Packet ID<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;FRAG&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Next expected fragment number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;TOTAL_LEN&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Total accumulated bytes<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;TOPIC_NAME&gt;</p></td>
+<td style="text-align: left;"><p>STRING<br />
+</p></td>
+<td style="text-align: left;"><p>Topic Name<br />
 </p></td>
 </tr>
 </tbody>
@@ -5373,9 +7055,9 @@ This function is used to define a last will message.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -5410,9 +7092,9 @@ This function is used to define a last will message.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -5444,7 +7126,7 @@ This function is used to define a last will message.
 <tr>
 <td style="text-align: left;"><p>lenTopicName</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pTopicName.<br />
+<td style="text-align: left;"><p>Length of pTopicName in bytes, strings are not NUL terminated so the length must not include a terminator.<br />
 </p></td>
 </tr>
 <tr>
@@ -5456,11 +7138,18 @@ This function is used to define a last will message.
 <tr>
 <td style="text-align: left;"><p>lenTopicPayload</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pTopicPayload.<br />
+<td style="text-align: left;"><p>Length of pTopicPayload in bytes.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
 
 ---
 #### WINC_CmdMQTTDISCONN
@@ -5507,7 +7196,15 @@ WINC_CMDMQTTDISCONN_REASON_CODE_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
+<a id="AN_FUNC_AT_MQTT_MQTTPROPTX"></a>
 #### WINC_CmdMQTTPROPTX
 
 ##### Description
@@ -5517,6 +7214,8 @@ This function is used to read or set the MQTT transmit properties.
 This function is a configuration function which supports setting and getting parameter values. The behaviour of configuration functions is described in general in the [Configuration Functions](#_configuration_functions) section.
 
 Any defined and selected properties are added to transmitted MQTT packets. Only properties applicable to the MQTT packet type are added. Properties must be selected via the [WINC_CmdMQTTPROPTXS](#AN_FUNC_AT_MQTT_MQTTPROPTXS) function before they are included.
+
+Property names and identifiers are as defined in the MQTT Version 5.0 specification (OASIS), section 2.2.2.2.
 
 > [!NOTE]
 > Not all properties listed below may be available in any implementation of this command set.
@@ -5556,7 +7255,7 @@ User property (38) supports multiple entries in the form of key/value pairs. If 
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDMQTTPROPTX_ID_IGNORE_VAL.</p></td>
@@ -5564,23 +7263,30 @@ WINC_CMDMQTTPROPTX_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response                | Description               |
 |-------------------------|---------------------------|
@@ -5660,9 +7366,9 @@ WINC_CMDMQTTPROPTX_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -5860,7 +7566,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>lenKey</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pKey.<br />
+<td style="text-align: left;"><p>Length of pKey in bytes, strings are not NUL terminated so the length must not include a terminator.<br />
 </p></td>
 </tr>
 <tr>
@@ -5873,11 +7579,18 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>lenOptVals</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pOptVals.<br />
+<td style="text-align: left;"><p>Length of pOptVals in bytes, strings are not NUL terminated so the length must not include a terminator.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response                | Description               |
 |-------------------------|---------------------------|
@@ -5962,6 +7675,7 @@ with an ID range 38.0 to 38.9<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_MQTT_MQTTPROPRX"></a>
 #### WINC_CmdMQTTPROPRX
 
 ##### Description
@@ -5971,6 +7685,8 @@ This function is used to read or reset the MQTT receive properties.
 This function is a configuration function which supports setting and getting parameter values. The behaviour of configuration functions is described in general in the [Configuration Functions](#_configuration_functions) section.
 
 Any defined properties are added to transmitted MQTT packets. Only properties applicable to the MQTT packet type are added.
+
+Property names and identifiers are as defined in the MQTT Version 5.0 specification (OASIS), section 2.2.2.2.
 
 Any properties received are added to the list of available receive properties which can be queried by this command. Updates to the received properties are announced using the [WINC_AEC_ID_MQTTPROPRX](#AN_AEC_AT_MQTT_MQTTPROPRX) AEC and can be read via this command.
 
@@ -6009,13 +7725,20 @@ User property (38) supports multiple entries in the form of key/value pairs.
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDMQTTPROPRX_ID_IGNORE_VAL.</p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response                | Description               |
 |-------------------------|---------------------------|
@@ -6095,9 +7818,9 @@ WINC_CMDMQTTPROPRX_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -6367,23 +8090,30 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>typeVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of val.<br />
+<td style="text-align: left;"><p>Type of val, val is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>val</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types val holds the value, for other types val is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of val.<br />
+<td style="text-align: left;"><p>Length in bytes of the data val points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response                | Description               |
 |-------------------------|---------------------------|
@@ -6463,9 +8193,9 @@ This function is a configuration function which supports setting and getting par
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -6529,9 +8259,9 @@ This function is used to define which transmit properties are selected.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -6638,9 +8368,9 @@ WINC_CMDMQTTPROPTXS_PROP_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -6667,6 +8397,13 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response                 | Description   |
 |--------------------------|---------------|
@@ -6704,9 +8441,9 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -6735,6 +8472,7 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_MQTT_MQTTCONN"></a>
 #### WINC_AEC_ID_MQTTCONN
 
 ##### Description
@@ -6770,9 +8508,9 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -6834,9 +8572,9 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -6867,9 +8605,9 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -6980,7 +8718,7 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 <td style="text-align: left;"><p>Use another server.</p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>156</p></td>
+<td style="text-align: left;"><p>157</p></td>
 <td style="text-align: left;"><p>SRV_MOVED</p></td>
 <td style="text-align: left;"><p>Server moved.</p></td>
 </tr>
@@ -6996,6 +8734,7 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_MQTT_MQTTPUBACK"></a>
 #### WINC_AEC_ID_MQTTPUBACK
 
 ##### Description
@@ -7034,6 +8773,7 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_MQTT_MQTTPUBCOMP"></a>
 #### WINC_AEC_ID_MQTTPUBCOMP
 
 ##### Description
@@ -7072,6 +8812,7 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_MQTT_MQTTPUBERR"></a>
 #### WINC_AEC_ID_MQTTPUBERR
 
 ##### Description
@@ -7145,9 +8886,9 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -7259,9 +9000,9 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -7350,9 +9091,9 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -7383,9 +9124,9 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -7421,9 +9162,9 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -7539,6 +9280,116 @@ WINC_CMDMQTTPROPTXS_PROP_SEL_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_MQTT_MQTTPUBSENT"></a>
+#### WINC_AEC_ID_MQTTPUBSENT
+
+##### Description
+
+**Publish sent (QoS 0).**
+
+| AEC         | Description          |
+|-------------|----------------------|
+| No Elements | Publish sent (QoS 0) |
+
+AEC Syntax
+
+---
+<a id="AN_AEC_AT_MQTT_MQTTSUBRXERR"></a>
+#### WINC_AEC_ID_MQTTSUBRXERR
+
+##### Description
+
+**Received subscribed data was dropped.**
+
+| AEC | Description |
+|----|----|
+| \<REASON\>,\<TOPIC_NAME\>,\<MSG_ID\>,\<MSG_LENGTH\> | Received message dropped |
+
+**AEC Syntax**
+
+<table>
+<caption>AEC Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;REASON&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Reason the received message was dropped<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>TOO_LARGE</p></td>
+<td style="text-align: left;"><p>Message exceeds the maximum packet size.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>2</p></td>
+<td style="text-align: left;"><p>NO_MEMORY</p></td>
+<td style="text-align: left;"><p>Insufficient memory to buffer the message.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>3</p></td>
+<td style="text-align: left;"><p>NO_SUB</p></td>
+<td style="text-align: left;"><p>No matching subscription.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>4</p></td>
+<td style="text-align: left;"><p>BAD_LENGTH</p></td>
+<td style="text-align: left;"><p>Message length inconsistent with buffer.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;TOPIC_NAME&gt;</p></td>
+<td style="text-align: left;"><p>STRING<br />
+</p></td>
+<td style="text-align: left;"><p>Topic Name<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MSG_ID&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Message ID<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MSG_LENGTH&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Length of message<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+---
 ### Examples:
 
 <a id="EXAMPLE_763df688af86d232581b5749c292a4aadffbdcd4"></a>
@@ -7554,7 +9405,7 @@ sequenceDiagram
     APP->>API: WINC_CmdTLSC(1,1,"ServerCACert")
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
     Note right of APP: Set the broker domain
-    APP->>API: WINC_CmdTLSC(1,6,"example.com")
+    APP->>API: WINC_CmdTLSC(1,6,"mqtt.example.com")
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
     Note right of APP: Set the broker hostname
     APP->>API: WINC_CmdMQTTC(1,"mqtt.example.com")
@@ -7604,7 +9455,7 @@ sequenceDiagram
     APP->>API: WINC_CmdTLSC(1,1,"ServerCACert")
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
     Note right of APP: Set the broker domain
-    APP->>API: WINC_CmdTLSC(1,6,"example.com")
+    APP->>API: WINC_CmdTLSC(1,6,"mqtt.example.com")
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
     Note right of APP: Set client ID
     APP->>API: WINC_CmdMQTTC(3,"clientid")
@@ -7697,19 +9548,45 @@ sequenceDiagram
     Note right of APP: Read message ID=1
     APP->>API: WINC_CmdMQTTSUBRD("Topic/name",1,12)
     Note left of API: Message ID=1 data
-    API->>APP: Response:WINC_CMD_ID_MQTTSUBRD(11,"ExampleText1")
+    API->>APP: Response:WINC_CMD_ID_MQTTSUBRD(12,"ExampleText1")
+    API->>APP: Status:WINC_CMD_ID_MQTTSUBRD(OK)
     Note right of APP: Read message ID=2
     APP->>API: WINC_CmdMQTTSUBRD("Topic/name",2,12)
     Note left of API: Message ID=2 data
-    API->>APP: Response:WINC_CMD_ID_MQTTSUBRD(11,"ExampleText2")
+    API->>APP: Response:WINC_CMD_ID_MQTTSUBRD(12,"ExampleText2")
+    API->>APP: Status:WINC_CMD_ID_MQTTSUBRD(OK)
 ```
 
 ---
 <a id="AN_MOD_NETIF"></a>
 ## NETIF (Module ID = 9)
 
+### Introduction
+
+The NETIF module configures and reports the settings of the network interfaces. Two interface configurations are provided, with indices 0 and 1. The [WSTA](#AN_MOD_WSTA), [WAP](#AN_MOD_WAP) and [DHCP](#AN_MOD_DHCP) modules each select the interface they use with their NETIF_IDX setting, which defaults to 0. [WINC_CmdNETIFC](#AN_FUNC_AT_NETIF_NETIFC) with no parameters reports the range of valid indices.
+
+An interface’s configuration can only be written while the interface is down, except [L2_MONITOR_MODE](#AN_FUNC_NETIFC_STORE_ID_L2_MONITOR_MODE) and [L2_MONITOR_MAX_LEN](#AN_FUNC_NETIFC_STORE_ID_L2_MONITOR_MAX_LEN). Where an address has both a configured and a live value, the configured value is reported while the interface is down and the live value while it is up.
+
+#### IPv4
+
+The DHCP client ([DHCPC_EN](#AN_FUNC_NETIFC_STORE_ID_DHCPC_EN)) is enabled by default and applies when the interface is used by the station. If DHCP is disabled and no static address is configured, a link-local (ZeroConf) address is used.
+
+#### IPv6
+
+Stateless address autoconfiguration ([IPV6_SLAAC](#AN_FUNC_NETIFC_STORE_ID_IPV6_SLAAC)) is enabled by default. The link-local address, global addresses and the gateway learned from router advertisements are reported once the interface is up.
+
+#### Layer 2 Access
+
+If [L2_ONLY](#AN_FUNC_NETIFC_STORE_ID_L2_ONLY) is set the interface is brought up without the TCP/IP stack.
+
+[L2_MONITOR_MODE](#AN_FUNC_NETIFC_STORE_ID_L2_MONITOR_MODE) selects which received frames (unicast, broadcast, multicast) are reported by the [WINC_AEC_ID_NETIFRX](#AN_AEC_AT_NETIF_NETIFRX) AEC, optionally truncated to [L2_MONITOR_MAX_LEN](#AN_FUNC_NETIFC_STORE_ID_L2_MONITOR_MAX_LEN) bytes. Monitored frames are still passed to the TCP/IP stack.
+
+[WINC_CmdNETIFTX](#AN_FUNC_AT_NETIF_NETIFTX) transmits a complete Ethernet frame, including its header, of up to 1596 bytes. The interface must be up.
+
+---
 ### Function Reference:
 
+<a id="AN_FUNC_AT_NETIF_NETIFC"></a>
 #### WINC_CmdNETIFC
 
 ##### Description
@@ -7760,7 +9637,7 @@ WINC_CMDNETIFC_INTF_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDNETIFC_ID_IGNORE_VAL.</p></td>
@@ -7768,28 +9645,35 @@ WINC_CMDNETIFC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
-| Response          | Description   |
-|-------------------|---------------|
-| \<INTF\>,\<INTF\> | List response |
-| \<ID\>,\<VAL\>    | Read response |
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response                | Description       |
+|-------------------------|-------------------|
+| \<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| \<ID\>,\<VAL\>          | Read response     |
 
 **Response Format**
 
@@ -7809,12 +9693,17 @@ WINC_CMDNETIFC_ID_IGNORE_VAL.</p></td>
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>&lt;INTF&gt;</p></td>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>Interface number<br />
-<br />
-Valid range is 0 to 1<br />
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
 </p></td>
 </tr>
 <tr>
@@ -7859,9 +9748,9 @@ Valid range is 0 to 1<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -7901,12 +9790,12 @@ Maximum length of string is 16<br />
 <td style="text-align: left;"><p>HOSTNAME</p></td>
 <td style="text-align: left;"><p>STRING<br />
 </p></td>
-<td style="text-align: left;"><p>Name of this interface<br />
+<td style="text-align: left;"><p>Host name of this interface (NetBIOS name), up to 16 characters<br />
 Maximum length of string is 16<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>10</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_NETIFC_STORE_ID_DHCPC_EN"></span> 10</p></td>
 <td style="text-align: left;"><p>DHCPC_EN</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
@@ -7914,9 +9803,9 @@ Maximum length of string is 16<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -7968,7 +9857,7 @@ A1|A2|A3|A4 = A1.A2.A3.A4<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>20</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_NETIFC_STORE_ID_L2_ONLY"></span> 20</p></td>
 <td style="text-align: left;"><p>L2_ONLY</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
@@ -7976,9 +9865,9 @@ A1|A2|A3|A4 = A1.A2.A3.A4<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -8002,7 +9891,7 @@ A1|A2|A3|A4 = A1.A2.A3.A4<br />
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>21</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_NETIFC_STORE_ID_L2_MONITOR_MODE"></span> 21</p></td>
 <td style="text-align: left;"><p>L2_MONITOR_MODE</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
@@ -8010,9 +9899,9 @@ A1|A2|A3|A4 = A1.A2.A3.A4<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -8066,15 +9955,15 @@ A1|A2|A3|A4 = A1.A2.A3.A4<br />
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>22</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_NETIFC_STORE_ID_L2_MONITOR_MAX_LEN"></span> 22</p></td>
 <td style="text-align: left;"><p>L2_MONITOR_MAX_LEN</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
-<td style="text-align: left;"><p>L2 monitor max length<br />
+<td style="text-align: left;"><p>Maximum number of bytes of each frame reported in NETIFRX AECs, 0 for the whole frame<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>40</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_NETIFC_STORE_ID_IP_MASK"></span> 40</p></td>
 <td style="text-align: left;"><p>IP_MASK</p></td>
 <td style="text-align: left;"><p>IPV4ADDR<br />
 </p></td>
@@ -8084,7 +9973,7 @@ A1|A2|A3|A4|M1|M2|M3|M4 = A1.A2.A3.A4 + M1.M2.M3.M4<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>41</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_NETIFC_STORE_ID_GATEWAY"></span> 41</p></td>
 <td style="text-align: left;"><p>GATEWAY</p></td>
 <td style="text-align: left;"><p>IPV4ADDR<br />
 </p></td>
@@ -8125,10 +10014,45 @@ Format of IPv6 address is<br />
 A1|…​|A16 = A1A2::A15A16<br />
 </p></td>
 </tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_NETIFC_STORE_ID_IPV6_SLAAC"></span> 63</p></td>
+<td style="text-align: left;"><p>IPV6_SLAAC</p></td>
+<td style="text-align: left;"><p>BOOL<br />
+</p></td>
+<td style="text-align: left;"><p>IPv6 SLAAC enable<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>DISABLED</p></td>
+<td style="text-align: left;"><p>Disabled - use static address only.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>ENABLED</p></td>
+<td style="text-align: left;"><p>Enabled - allow autoconfiguration (default).</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
 </tbody>
 </table>
 
 ---
+<a id="AN_FUNC_AT_NETIF_NETIFTX"></a>
 #### WINC_CmdNETIFTX
 
 ##### Description
@@ -8179,15 +10103,23 @@ This function is used to send L2 data frames.
 <tr>
 <td style="text-align: left;"><p>lenData</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pData.<br />
+<td style="text-align: left;"><p>Length of pData in bytes.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_NETIF_NETIFRX"></a>
 #### WINC_AEC_ID_NETIFRX
 
 ##### Description
@@ -8245,8 +10177,227 @@ Valid range is 0 to 1<br />
 <a id="AN_MOD_OTA"></a>
 ## OTA (Module ID = 10)
 
+### Introduction
+
+Over-the-air (OTA) allows the firmware of the WINC to be upgraded. There are two OTA methods: an internal HTTP/HTTPS download based method using [OTA (Module ID = 10)](#AN_MOD_OTA) functions; or a host controlled flash write based method using [NVM (Module ID = 29)](#AN_MOD_NVM) functions.
+
+Both methods make use of an alternate firmware image partition in non-volatile memory. The new image is placed in the alternate partition, then verified and activated. Once the new image has been activated, the current image continues to run, but the new image will have higher priority to run at the next boot.
+
+After a successful OTA, activation and reboot, the alternate firmware image partition will contain the previously run image. It is possible to rollback to this previous image using the [WINC_CmdOTAINV](#AN_FUNC_AT_OTA_OTAINV) function. This function verifies the previous image, then invalidates the current running firmware image, so that it cannot be booted again. The current image continues to run, but the previous image will run at the next boot.
+
+> [!NOTE]
+> If the OTA feature is not being utilised, the alternate firmware image partition on the WINC can be used for data storage. The partition supports up to 960kB of data. Data can be erased, written, read and checked via the NVM functions.
+
+#### OTA Sequence
+
+Each of [WINC_CmdOTADL](#AN_FUNC_AT_OTA_OTADL), [WINC_CmdOTAVFY](#AN_FUNC_AT_OTA_OTAVFY), [WINC_CmdOTAACT](#AN_FUNC_AT_OTA_OTAACT) and [WINC_CmdOTAINV](#AN_FUNC_AT_OTA_OTAINV) returns a new operation ID in its response, and every [WINC_AEC_ID_OTA](#AN_AEC_AT_OTA_OTA) and [WINC_AEC_ID_OTAERR](#AN_AEC_AT_OTA_OTAERR) AEC which follows carries that ID. Only one OTA operation can run at a time; a new operation is refused until the previous one has completed.
+
+##### Download
+
+[WINC_CmdOTADL](#AN_FUNC_AT_OTA_OTADL) downloads the image from the server configured with [WINC_CmdOTAC](#AN_FUNC_AT_OTA_OTAC) into the alternate partition. It is refused if:
+
+- [WINC_CmdOTAINV](#AN_FUNC_AT_OTA_OTAINV) has been used since the last reset: [NVM_LOCKED](#AN_STATUS_NVM_LOCKED);
+
+- the STA is not connected: [OTA_NO_STA_CONN](#AN_STATUS_OTA_NO_STA_CONN);
+
+- a download is already running, [HOST](#AN_FUNC_OTAC_STORE_ID_HOST) is not set, or the HTTP client is in use by the [HTTP](#AN_MOD_HTTP) module.
+
+On success the [WINC_AEC_ID_OTA](#AN_AEC_AT_OTA_OTA) AEC reports, in order:
+
+1.  Erase Done: the whole alternate partition has been erased.
+
+2.  Write Done: the whole image has been received and written.
+
+3.  Verify Done: the image signature has been verified.
+
+The downloaded image is latent: it does not run until it is activated. A download cannot be cancelled.
+
+##### Verify and Activate
+
+[WINC_CmdOTAVFY](#AN_FUNC_AT_OTA_OTAVFY) verifies the image in the alternate partition, reported by the [WINC_AEC_ID_OTA](#AN_AEC_AT_OTA_OTA) AEC with Verify Done. It is only needed for the NVM method; a download is verified automatically.
+
+[WINC_CmdOTAACT](#AN_FUNC_AT_OTA_OTAACT) verifies the image again and then activates it, reported with Activate Done. The current image continues to run; the activated image runs from the next reset.
+
+If the image fails verification, [WINC_CmdOTAVFY](#AN_FUNC_AT_OTA_OTAVFY) and [WINC_CmdOTAACT](#AN_FUNC_AT_OTA_OTAACT) fail with [OTA_VERIFY_FAILED](#AN_STATUS_OTA_VERIFY_FAILED) and no AEC is sent. [WINC_CmdOTAACT](#AN_FUNC_AT_OTA_OTAACT) fails with an error if the image has already been activated.
+
+> [!NOTE]
+> A download started after [WINC_CmdOTAACT](#AN_FUNC_AT_OTA_OTAACT) and before the next reset erases the activated image.
+
+##### Rollback
+
+[WINC_CmdOTAINV](#AN_FUNC_AT_OTA_OTAINV) verifies the image in the alternate partition, which must be bootable: the previous (rollback) image, or an image activated since the last reset, but not a latent image. It then invalidates the current image, reported with Invalidate Done, and the alternate image runs from the next reset.
+
+After [WINC_CmdOTAINV](#AN_FUNC_AT_OTA_OTAINV), [WINC_CmdNVMER](#AN_FUNC_AT_NVM_NVMER), [WINC_CmdNVMWR](#AN_FUNC_AT_NVM_NVMWR) and [WINC_CmdOTADL](#AN_FUNC_AT_OTA_OTADL) fail with [NVM_LOCKED](#AN_STATUS_NVM_LOCKED) until the next reset.
+
+##### After an Error
+
+When the [WINC_AEC_ID_OTAERR](#AN_AEC_AT_OTA_OTAERR) AEC is sent the download stops, and the alternate partition is left partly erased or written. Correct the cause and start the download again; the partition is erased again first. For the NVM method, erase and rewrite the partition.
+
+- [OTA_ERROR](#AN_STATUS_OTA_ERROR): an erase or flash write failed, or the connection closed before the whole image was received. The server must send a Content-Length header.
+
+- [OTA_PROTOCOL_ERROR](#AN_STATUS_OTA_PROTOCOL_ERROR): the server returned an HTTP status other than 200, which is included in the AEC (see [Error Handling](#AN_NOTE_OTA_ERRORS)), or a DNS, connection or request error occurred.
+
+- [OTA_TLS_ERROR](#AN_STATUS_OTA_TLS_ERROR): the TLS session could not be created or the handshake failed, see [TLS](#AN_MOD_TLS).
+
+- [OTA_IMG_TOO_LARGE](#AN_STATUS_OTA_IMG_TOO_LARGE): the image is larger than the partition.
+
+- [OTA_TIMEOUT](#AN_STATUS_OTA_TIMEOUT): no progress was made within the timeout, see [Timeout](#AN_NOTE_OTA_TIMEOUT). Loss of the STA link, or the server closing the connection, during the download is also reported as a timeout.
+
+- [OTA_VERIFY_FAILED](#AN_STATUS_OTA_VERIFY_FAILED): the downloaded image failed verification.
+
+##### After Reset
+
+The [WINC_AEC_ID_BOOT](#AN_AEC_AT_CMD_APP_BOOT) AEC reports the version of the running firmware. [WINC_CmdDI](#AN_FUNC_AT_DI_DI) lists the image in each partition; after a successful update the new image is CURRENT and the previous image is ROLLBACK. The WINCS02 does not roll back automatically; use [WINC_CmdOTAINV](#AN_FUNC_AT_OTA_OTAINV) to return to the previous image.
+
+---
+<a id="AN_NOTE_OTA_TIMEOUT"></a>
+#### Timeout
+
+The internal OTA download has a timeout set by [TIMEOUT](#AN_FUNC_OTAC_STORE_ID_TIMEOUT), 20 seconds by default. The download is stopped with [OTA_TIMEOUT](#AN_STATUS_OTA_TIMEOUT) if no progress is made within the timeout. The timer starts once the partition has been erased, and covers the DNS lookup, the connection, the TLS handshake and each gap between received packets. If the server sends a Keep-Alive header with a timeout, that value is used instead.
+
+> [!NOTE]
+> It may be necessary to use a timeout greater than the default if the network conditions are poor, or the server has a high latency.
+
+<a id="AN_NOTE_OTA_ERRORS"></a>
+#### Error Handling
+
+The OTA module reports errors via the [WINC_AEC_ID_OTAERR](#AN_AEC_AT_OTA_OTAERR) AEC. For protocol-specific errors (such as HTTP status codes indicating authentication failures, missing resources, or server errors), the extended error format includes the protocol type and the protocol-specific error code.
+
+When the error code is `WINC_STATUS_OTA_PROTOCOL_ERROR`, the AEC includes additional fields:
+
+- `PROTOCOL` - Protocol type (1 = HTTP)
+
+- `PROTOCOL_STATUS` - Protocol-specific error code (HTTP status code)
+
+For example, if the OTA server returns HTTP 401 (Unauthorized), the error callback will receive:
+
+- `OTA_OP_ID` = operation ID
+
+- `ERROR_CODE` = `WINC_STATUS_OTA_PROTOCOL_ERROR`
+
+- `PROTOCOL` = 1 (HTTP)
+
+- `PROTOCOL_STATUS` = 401
+
+Common HTTP status codes that may be reported:
+
+- `401` - Unauthorized (authentication required)
+
+- `403` - Forbidden (access denied)
+
+- `404` - Not Found (firmware file does not exist)
+
+- `500` - Internal Server Error
+
+- `503` - Service Unavailable
+
+Errors detected when an OTA command is issued, such as OTA_NO_STA_CONN, or a failed verification by [WINC_CmdOTAVFY](#AN_FUNC_AT_OTA_OTAVFY), [WINC_CmdOTAACT](#AN_FUNC_AT_OTA_OTAACT) or [WINC_CmdOTAINV](#AN_FUNC_AT_OTA_OTAINV), are returned as the command’s status rather than by an AEC.
+
+#### Troubleshooting
+
+Further firmware image information can be gathered with the [WINC_CmdDI](#AN_FUNC_AT_DI_DI) function which can help with debugging available images on the WINC.
+
+---
+#### Internal HTTP/S OTA Example
+
+For OTA using the internal HTTP/HTTPS download based method, a HTTP server is required to serve the firmware image file. The host configures the download, then downloads and activates the new image. Image verification is done internally when the download completes.
+
+##### HTTP Configuration
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Set host
+    APP->>API: WINC_CmdOTAC(2,"example.com")
+    API->>APP: Status:WINC_CMD_ID_OTAC(OK)
+    Note right of APP: Set port
+    APP->>API: WINC_CmdOTAC(3,80)
+    API->>APP: Status:WINC_CMD_ID_OTAC(OK)
+    Note right of APP: Set path
+    APP->>API: WINC_CmdOTAC(4,"/firmware/")
+    API->>APP: Status:WINC_CMD_ID_OTAC(OK)
+    Note right of APP: Set filename of the released OTA image
+    APP->>API: WINC_CmdOTAC(5,"rnwf02_ota.bin")
+    API->>APP: Status:WINC_CMD_ID_OTAC(OK)
+```
+
+##### HTTPS Configuration
+
+To use HTTPS a TLS configuration is required.
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Set TLS configuration
+    APP->>API: WINC_CmdOTAC(7,1)
+    API->>APP: Status:WINC_CMD_ID_OTAC(OK)
+```
+
+##### Download and Activation
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Request OTA download
+    APP->>API: WINC_CmdOTADL(1)
+    API->>APP: Response:WINC_CMD_ID_OTADL(1)
+    API->>APP: Status:WINC_CMD_ID_OTADL(OK)
+    Note left of API: Partition erased AEC
+    API->>APP: AEC:WINC_AEC_ID_OTA(1,10.0,"Erase Done")
+    Note left of API: Firmware image written AEC
+    API->>APP: AEC:WINC_AEC_ID_OTA(1,10.1,"Write Done")
+    Note left of API: Firmware image verified AEC
+    API->>APP: AEC:WINC_AEC_ID_OTA(1,10.2,"Verify Done")
+    Note right of APP: Request to activate firmware
+    APP->>API: WINC_CmdOTAACT()
+    API->>APP: Response:WINC_CMD_ID_OTAACT(2)
+    API->>APP: Status:WINC_CMD_ID_OTAACT(OK)
+    Note left of API: Activation successful AEC
+    API->>APP: AEC:WINC_AEC_ID_OTA(2,10.3,"Activate Done")
+```
+
+---
+#### NVM OTA Example
+
+For OTA using the host controlled flash write based method, the host accesses the alternate firmware image partition of the WINC with flash read/write/erase functions. This feature allows extra flexibility with the data transport method, and ability to implement more advanced OTA logic if required - such as piecemeal updating with persistence between power cycles.
+
+Once the host has written the image to the WINC using [NVM (Module ID = 29)](#AN_MOD_NVM) functions, the host should verify and activate the new image using [OTA (Module ID = 10)](#AN_MOD_OTA) functions.
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Erase the alternate partition (240 sectors)
+    APP->>API: WINC_CmdNVMER(0,240)
+    API->>APP: Status:WINC_CMD_ID_NVMER(OK)
+    Note left of API: Erase complete AEC
+    API->>APP: AEC:WINC_AEC_ID_NVMER()
+    Note right of APP: Write firmware image data
+    APP->>API: WINC_CmdNVMWR(0,512,[FFFFFFFF0101E0005048434D0300000000000300FFFFFFFF...])
+    API->>APP: Status:WINC_CMD_ID_NVMWR(OK)
+    APP->>API: WINC_CmdNVMWR(0,512,[...])
+    API->>APP: Status:WINC_CMD_ID_NVMWR(OK)
+    Note right of APP: Request to verify firmware image
+    APP->>API: WINC_CmdOTAVFY()
+    API->>APP: Response:WINC_CMD_ID_OTAVFY(1)
+    API->>APP: Status:WINC_CMD_ID_OTAVFY(OK)
+    Note left of API: Firmware image verified AEC
+    API->>APP: AEC:WINC_AEC_ID_OTA(1,10.2,"Verify Done")
+    Note right of APP: Request to activate firmware
+    APP->>API: WINC_CmdOTAACT()
+    API->>APP: Response:WINC_CMD_ID_OTAACT(2)
+    API->>APP: Status:WINC_CMD_ID_OTAACT(OK)
+    Note left of API: Activation successful AEC
+    API->>APP: AEC:WINC_AEC_ID_OTA(2,10.3,"Activate Done")
+```
+
+---
 ### Function Reference:
 
+<a id="AN_FUNC_AT_OTA_OTAC"></a>
 #### WINC_CmdOTAC
 
 ##### Description
@@ -8288,7 +10439,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDOTAC_ID_IGNORE_VAL.</p></td>
@@ -8296,19 +10447,63 @@ WINC_CMDOTAC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response       | Description   |
+|----------------|---------------|
+| \<ID\>,\<VAL\> | Read response |
+
+**Response Format**
+
+<table>
+<caption>Response Element Description</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Any</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
 </p></td>
 </tr>
 </tbody>
@@ -8340,9 +10535,9 @@ WINC_CMDOTAC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -8369,9 +10564,9 @@ WINC_CMDOTAC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -8390,7 +10585,7 @@ WINC_CMDOTAC_ID_IGNORE_VAL.</p></td>
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>2</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_OTAC_STORE_ID_HOST"></span> 2</p></td>
 <td style="text-align: left;"><p>HOST</p></td>
 <td style="text-align: left;"><p>STRING<br />
 IPV4ADDR<br />
@@ -8409,7 +10604,7 @@ A1|…​|A16 = A1A2::A15A16<br />
 <td style="text-align: left;"><p>PORT</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
-<td style="text-align: left;"><p>Listening port<br />
+<td style="text-align: left;"><p>Server port (e.g. 80 for HTTP, 443 for HTTPS); must be set<br />
 </p></td>
 </tr>
 <tr>
@@ -8431,7 +10626,7 @@ Maximum length of string is 1024<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>6</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_OTAC_STORE_ID_TIMEOUT"></span> 6</p></td>
 <td style="text-align: left;"><p>TIMEOUT</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
@@ -8441,11 +10636,11 @@ Positive unsigned 8-bit value<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_OTAC_STORE_ID_TLS_CONF"></span> 7</p></td>
 <td style="text-align: left;"><p>TLS_CONF</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>TLS configuration index (see +TLSC)<br />
+<td style="text-align: left;"><p>TLS configuration index (see WINC_CmdTLSCDA). 0 disables TLS<br />
 <br />
 Valid range is 0 to 4<br />
 </p></td>
@@ -8462,11 +10657,12 @@ Valid range is 0 to 4<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_OTA_OTADL"></a>
 #### WINC_CmdOTADL
 
 ##### Description
 
-This function allows the downloading of firmware to the WINC.
+This function allows the downloading of firmware to the device.
 
     bool WINC_CmdOTADL
     (
@@ -8502,9 +10698,9 @@ This function allows the downloading of firmware to the WINC.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -8524,6 +10720,13 @@ This function allows the downloading of firmware to the WINC.
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response      | Description           |
 |---------------|-----------------------|
@@ -8559,6 +10762,7 @@ Positive unsigned 8-bit value<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_OTA_OTAVFY"></a>
 #### WINC_CmdOTAVFY
 
 ##### Description
@@ -8590,6 +10794,13 @@ This function verifies the OTA firmware image.
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response      | Description         |
 |---------------|---------------------|
@@ -8625,6 +10836,7 @@ Positive unsigned 8-bit value<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_OTA_OTAACT"></a>
 #### WINC_CmdOTAACT
 
 ##### Description
@@ -8656,6 +10868,13 @@ This function activates the OTA firmware image.
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response      | Description           |
 |---------------|-----------------------|
@@ -8691,6 +10910,7 @@ Positive unsigned 8-bit value<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_OTA_OTAINV"></a>
 #### WINC_CmdOTAINV
 
 ##### Description
@@ -8722,6 +10942,13 @@ This function will invalidate the current running firmware image. Invalidation d
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response      | Description             |
 |---------------|-------------------------|
@@ -8759,6 +10986,7 @@ Positive unsigned 8-bit value<br />
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_OTA_OTA"></a>
 #### WINC_AEC_ID_OTA
 
 ##### Description
@@ -8799,58 +11027,47 @@ Positive unsigned 8-bit value<br />
 <td style="text-align: left;"><p>&lt;OTA_STATE&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>Status code<br />
-</p>
+<td style="text-align: left;"><p>OTA status code<br />
+One of the OTA module status codes:</p>
 <table>
 <colgroup>
-<col style="width: 14%" />
-<col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 100%" />
 </colgroup>
-<thead>
-<tr>
-<th style="text-align: left;">Value</th>
-<th style="text-align: left;">Label</th>
-<th style="text-align: left;">Description</th>
-</tr>
-</thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>0</p></td>
-<td style="text-align: left;"><p>ERASE_DONE</p></td>
-<td style="text-align: left;"><p>Erase done.</p></td>
+<td style="text-align: left;"><p><a href="#AN_STATUS_ERASE_DONE">WINC_STATUS_ERASE_DONE</a></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>1</p></td>
-<td style="text-align: left;"><p>WRITE_DONE</p></td>
-<td style="text-align: left;"><p>Write done.</p></td>
+<td style="text-align: left;"><p><a href="#AN_STATUS_WRITE_DONE">WINC_STATUS_WRITE_DONE</a></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>2</p></td>
-<td style="text-align: left;"><p>VERIFY_DONE</p></td>
-<td style="text-align: left;"><p>Verify done.</p></td>
+<td style="text-align: left;"><p><a href="#AN_STATUS_VERIFY_DONE">WINC_STATUS_VERIFY_DONE</a></p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>3</p></td>
-<td style="text-align: left;"><p>ACTIVATE_DONE</p></td>
-<td style="text-align: left;"><p>Activate done.</p></td>
+<td style="text-align: left;"><p><a href="#AN_STATUS_ACTIVATE_DONE">WINC_STATUS_ACTIVATE_DONE</a></p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><a href="#AN_STATUS_INVALIDATE_DONE">WINC_STATUS_INVALIDATE_DONE</a></p></td>
 </tr>
 </tbody>
-</table></td>
+</table>
+<p>See <a href="#_status_response_codes">Status Response Codes</a>.</p></td>
 </tr>
 </tbody>
 </table>
 
 ---
+<a id="AN_AEC_AT_OTA_OTAERR"></a>
 #### WINC_AEC_ID_OTAERR
 
 ##### Description
 
 **OTA error.**
 
-| AEC                          | Description |
-|------------------------------|-------------|
-| \<OTA_OP_ID\>,\<ERROR_CODE\> | OTA error   |
+| AEC | Description |
+|----|----|
+| \<OTA_OP_ID\>,\<ERROR_CODE\> | OTA error |
+| \<OTA_OP_ID\>,\<ERROR_CODE\>,\<PROTOCOL\>,\<PROTOCOL_STATUS\> | OTA protocol status |
 
 **AEC Syntax**
 
@@ -8886,6 +11103,42 @@ Positive unsigned 8-bit value<br />
 </p>
 <p>See <a href="#_status_response_codes">Status Response Codes</a></p></td>
 </tr>
+<tr>
+<td style="text-align: left;"><p>&lt;PROTOCOL&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Protocol type<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>HTTP</p></td>
+<td style="text-align: left;"><p>HTTP protocol.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;PROTOCOL_STATUS&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Protocol-specific status code<br />
+</p>
+<p>For HTTP protocol this is the server response code, valid range is 100 to 599</p></td>
+</tr>
 </tbody>
 </table>
 
@@ -8908,8 +11161,8 @@ sequenceDiagram
     Note right of APP: Set path
     APP->>API: WINC_CmdOTAC(4,"/firmware/")
     API->>APP: Status:WINC_CMD_ID_OTAC(OK)
-    Note right of APP: Set filename
-    APP->>API: WINC_CmdOTAC(5,"rnwf02_ota.bootable.bin")
+    Note right of APP: Set filename of the released OTA image
+    APP->>API: WINC_CmdOTAC(5,"rnwf02_ota.bin")
     API->>APP: Status:WINC_CMD_ID_OTAC(OK)
 ```
 
@@ -8936,7 +11189,7 @@ sequenceDiagram
     APP->>API: WINC_CmdOTADL(1)
     API->>APP: Response:WINC_CMD_ID_OTADL(1)
     API->>APP: Status:WINC_CMD_ID_OTADL(OK)
-    Note left of API: Partiton erased AEC
+    Note left of API: Partition erased AEC
     API->>APP: AEC:WINC_AEC_ID_OTA(1,10.0,"Erase Done")
     Note left of API: Firmware image written AEC
     API->>APP: AEC:WINC_AEC_ID_OTA(1,10.1,"Write Done")
@@ -8957,6 +11210,11 @@ sequenceDiagram
 sequenceDiagram
     participant APP as App
     participant API as API
+    Note right of APP: Erase the alternate partition (240 sectors)
+    APP->>API: WINC_CmdNVMER(0,240)
+    API->>APP: Status:WINC_CMD_ID_NVMER(OK)
+    Note left of API: Erase complete AEC
+    API->>APP: AEC:WINC_AEC_ID_NVMER()
     Note right of APP: Write firmware image data
     APP->>API: WINC_CmdNVMWR(0,512,[FFFFFFFF0101E0005048434D0300000000000300FFFFFFFF...])
     API->>APP: Status:WINC_CMD_ID_NVMWR(OK)
@@ -8980,8 +11238,18 @@ sequenceDiagram
 <a id="AN_MOD_PING"></a>
 ## PING (Module ID = 11)
 
+### Introduction
+
+The PING module sends a single ICMP echo request to a remote host and reports the round trip time.
+
+The target may be an IPv4 or IPv6 address, or a host name which is first resolved using DNS. The [WINC_CmdPING](#AN_FUNC_AT_PING_PING) function completes once the request has been sent; the result is reported later by the [WINC_AEC_ID_PING](#AN_AEC_AT_PING_PING) AEC, which carries the address and round trip time, or by the [WINC_AEC_ID_PINGERR](#AN_AEC_AT_PING_PINGERR) AEC if no reply is received within one second.
+
+More than one request may be outstanding at a time.
+
+---
 ### Function Reference:
 
+<a id="AN_FUNC_AT_PING_PING"></a>
 #### WINC_CmdPING
 
 ##### Description
@@ -9021,19 +11289,19 @@ This function sends a ping (ICMP Echo Request) to the target address.
 <tr>
 <td style="text-align: left;"><p>typeTargetAddr</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of targetAddr.<br />
+<td style="text-align: left;"><p>Type of targetAddr, targetAddr is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>targetAddr</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>IP address or host name of target.<br />
+<td style="text-align: left;"><p>IP address or host name of target. For integer types targetAddr holds the value, for other types targetAddr is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenTargetAddr</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of targetAddr.<br />
+<td style="text-align: left;"><p>Length in bytes of the data targetAddr points to, ignored for integer types.<br />
 </p></td>
 </tr>
 <tr>
@@ -9043,9 +11311,9 @@ This function sends a ping (ICMP Echo Request) to the target address.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -9073,9 +11341,17 @@ WINC_CMDPING_PROTOCOL_VERSION_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_PING_PING"></a>
 #### WINC_AEC_ID_PING
 
 ##### Description
@@ -9121,6 +11397,7 @@ WINC_CMDPING_PROTOCOL_VERSION_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_PING_PINGERR"></a>
 #### WINC_AEC_ID_PINGERR
 
 ##### Description
@@ -9162,13 +11439,21 @@ WINC_CMDPING_PROTOCOL_VERSION_IGNORE_VAL.</p></td>
 ---
 ## RST (Module ID = 12)
 
+### Introduction
+
+The [WINC_CmdRST](#AN_FUNC_AT_RST_RST) function performs a full software reset of the WINCS02. The command status is sent before the reset takes place.
+
+All runtime state and configuration is lost, including network connections, the system time and scan results. After the reset the configuration is restored from the configuration archive file "autoexec" if one has been stored, see [CFG](#AN_MOD_CFG).
+
+---
 ### Function Reference:
 
+<a id="AN_FUNC_AT_RST_RST"></a>
 #### WINC_CmdRST
 
 ##### Description
 
-This function is used to reset the WINC.
+This function is used to reset the device.
 
 **bool WINC_CmdRST(WINC_CMD_REQ_HANDLE handle)**
 
@@ -9196,13 +11481,38 @@ This function is used to reset the WINC.
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
 ---
 <a id="AN_MOD_SNTP"></a>
 ## SNTP (Module ID = 13)
 
+### Introduction
+
+The SNTP module configures the NTP client which sets the system time. The client is enabled by default.
+
+The source of the NTP server is selected by [NTP_STATIC](#AN_FUNC_SNTPC_STORE_ID_NTP_STATIC):
+
+- AUTO: the NTP server supplied by the DHCP server is used. If none is supplied the client does not start.
+
+- MANUAL: the server configured by [NTP_SVR](#AN_FUNC_SNTPC_STORE_ID_NTP_SVR) is used, this may be a host name or an IPv4 or IPv6 address.
+
+The client starts when the station interface obtains an IP address. Changes made with [WINC_CmdSNTPC](#AN_FUNC_AT_SNTP_SNTPC) while connected are applied immediately.
+
+Each successful synchronisation sets the system time and sends a [WINC_AEC_ID_TIME](#AN_AEC_AT_TIME_TIME) AEC. Server timeouts and protocol errors are reported by the [WINC_AEC_ID_SNTPERR](#AN_AEC_AT_SNTP_SNTPERR) AEC.
+
+While the station is connected and the client is enabled, reading [NTP_SVR](#AN_FUNC_SNTPC_STORE_ID_NTP_SVR) returns the address of the server in use rather than the configured value.
+
+---
 ### Function Reference:
 
+<a id="AN_FUNC_AT_SNTP_SNTPC"></a>
 #### WINC_CmdSNTPC
 
 ##### Description
@@ -9244,7 +11554,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDSNTPC_ID_IGNORE_VAL.</p></td>
@@ -9252,23 +11562,30 @@ WINC_CMDSNTPC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response       | Description   |
 |----------------|---------------|
@@ -9333,9 +11650,9 @@ WINC_CMDSNTPC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -9362,9 +11679,9 @@ WINC_CMDSNTPC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -9376,7 +11693,7 @@ WINC_CMDSNTPC_ID_IGNORE_VAL.</p></td>
 <tbody>
 <tr>
 <td style="text-align: left;"><p>0</p></td>
-<td style="text-align: left;"><p>DISBLED</p></td>
+<td style="text-align: left;"><p>DISABLED</p></td>
 <td style="text-align: left;"><p>Disabled.</p></td>
 </tr>
 <tr>
@@ -9388,7 +11705,7 @@ WINC_CMDSNTPC_ID_IGNORE_VAL.</p></td>
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>2</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_SNTPC_STORE_ID_NTP_STATIC"></span> 2</p></td>
 <td style="text-align: left;"><p>NTP_STATIC</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
@@ -9396,9 +11713,9 @@ WINC_CMDSNTPC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -9422,7 +11739,7 @@ WINC_CMDSNTPC_ID_IGNORE_VAL.</p></td>
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>3</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_SNTPC_STORE_ID_NTP_SVR"></span> 3</p></td>
 <td style="text-align: left;"><p>NTP_SVR</p></td>
 <td style="text-align: left;"><p>STRING<br />
 IPV4ADDR<br />
@@ -9442,6 +11759,7 @@ A1|…​|A16 = A1A2::A15A16<br />
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_SNTP_SNTPERR"></a>
 #### WINC_AEC_ID_SNTPERR
 
 ##### Description
@@ -9484,8 +11802,226 @@ A1|…​|A16 = A1A2::A15A16<br />
 <a id="AN_MOD_SOCKET"></a>
 ## SOCKET (Module ID = 14)
 
+### Introduction:
+
+Sockets can be used in two ways:
+
+- Directly, through the WINC_CmdSOCK\* functions and the WINC_AEC_ID_SOCK\* AECs described in this section.
+
+- Through the [Berkeley Sockets API](#AN_FUNC_API_BERKELEY_SOCKETS). This layer is built on the same functions and manages socket creation, configuration and data transfer itself; it is the recommended way to use sockets.
+
+> [!NOTE]
+> A socket created through the Berkeley Sockets API must not also be operated with the WINC_CmdSOCK\* functions. AEC callbacks registered by the application also receive the socket AECs for those sockets, and should ignore them.
+
+#### Socket Lifecycle
+
+##### Opening
+
+[WINC_CmdSOCKO](#AN_FUNC_AT_SOCKET_SOCKO) opens a UDP or TCP socket and returns its socket ID. The IP version (4 or 6) is optional; if it is not given IPv4 is used when the socket is bound. Socket IDs are allocated sequentially and are not reused until the 16-bit ID wraps.
+
+A network connection is not needed to open a socket, but a TCP connection needs a local IP address. Up to 30 sockets can be open at once, after which [WINC_CmdSOCKO](#AN_FUNC_AT_SOCKET_SOCKO) fails with [NO_FREE_SOCKETS](#AN_STATUS_NO_FREE_SOCKETS). The TCP/IP stack provides 10 TCP and 10 UDP sockets, which are shared with the MQTT and HTTP modules.
+
+##### TCP Client
+
+1.  [WINC_CmdSOCKBR](#AN_FUNC_AT_SOCKET_SOCKBR) connects the socket to a remote IP address or host name. A successful command status indicates the connection has started.
+
+2.  The [WINC_AEC_ID_SOCKIND](#AN_AEC_AT_SOCKET_SOCKIND) AEC reports that the connection is established, with the local and remote addresses and ports.
+
+If the connection is not established within 10 seconds, including when it is refused by the remote host, the [WINC_AEC_ID_SOCKERR](#AN_AEC_AT_SOCKET_SOCKERR) AEC reports Socket Bind Failed. If the host name cannot be resolved, [WINC_AEC_ID_SOCKERR](#AN_AEC_AT_SOCKET_SOCKERR) reports the DNS error. The socket ID remains allocated in both cases and must be closed with [WINC_CmdSOCKCL](#AN_FUNC_AT_SOCKET_SOCKCL).
+
+---
+##### TCP Server
+
+1.  [WINC_CmdSOCKBL](#AN_FUNC_AT_SOCKET_SOCKBL) listens on a local port. [The number of pending sockets](#AN_FUNC_AT_SOCKET_SOCKBL_PEND_SKTS) (default 1) sets the number of connections which can be open at once; each one reserves a TCP stack socket when the socket starts listening.
+
+2.  Each accepted connection is given a new socket ID, reported by the [WINC_AEC_ID_SOCKIND](#AN_AEC_AT_SOCKET_SOCKIND) AEC. The new socket inherits the listening socket’s [WINC_CmdSOCKC](#AN_FUNC_AT_SOCKET_SOCKC) and TLS settings. Data is read and written using the new socket ID.
+
+Closing an accepted socket frees its connection slot for the next connection. Closing the listening socket stops new connections; sockets which are already connected stay open.
+
+See example [formalpara_title](#EXAMPLE_SOCKO_1).
+
+##### UDP
+
+- [WINC_CmdSOCKBL](#AN_FUNC_AT_SOCKET_SOCKBL) binds the socket to a local port, and datagrams from any remote host are received.
+
+- [WINC_CmdSOCKBR](#AN_FUNC_AT_SOCKET_SOCKBR) sets the default destination used by [WINC_CmdSOCKWR](#AN_FUNC_AT_SOCKET_SOCKWR).
+
+- [WINC_CmdSOCKWRTO](#AN_FUNC_AT_SOCKET_SOCKWRTO) sends to the given address. It binds the socket if needed, and sets the default destination if none is set.
+
+- [WINC_CmdSOCKBM](#AN_FUNC_AT_SOCKET_SOCKBM) joins a multicast group.
+
+##### TLS
+
+[WINC_CmdSOCKTLS](#AN_FUNC_AT_SOCKET_SOCKTLS) applies a TLS configuration (1 to 4, see [WINC_CmdTLSC](#AN_FUNC_AT_TLS_TLSC)) to a TCP socket:
+
+- if it is used before [WINC_CmdSOCKBR](#AN_FUNC_AT_SOCKET_SOCKBR) or [WINC_CmdSOCKBL](#AN_FUNC_AT_SOCKET_SOCKBL), the handshake starts once the connection is established;
+
+- if it is used on a connected socket, the connection is upgraded to TLS.
+
+The [WINC_AEC_ID_SOCKTLS](#AN_AEC_AT_SOCKET_SOCKTLS) AEC reports that the handshake has completed; data cannot be written until then. On a server, each accepted socket performs its own handshake and reports [WINC_AEC_ID_SOCKTLS](#AN_AEC_AT_SOCKET_SOCKTLS) with its own socket ID. If the handshake fails, the [WINC_AEC_ID_SOCKERR](#AN_AEC_AT_SOCKET_SOCKERR) AEC reports Socket TLS Failed.
+
+---
+##### Writing
+
+- [WINC_CmdSOCKWR](#AN_FUNC_AT_SOCKET_SOCKWR) writes to a TCP socket, or to a UDP socket with a default destination, up to 1460 bytes.
+
+- [WINC_CmdSOCKWRTO](#AN_FUNC_AT_SOCKET_SOCKWRTO) writes to a UDP socket, up to 1472 bytes.
+
+- If there is not enough transmit buffer space the command fails with [SOCKET_NOT_READY](#AN_STATUS_SOCKET_NOT_READY); retry later.
+
+The optional sequence number ([optSeqNum](#AN_FUNC_AT_SOCKET_SOCKWR_SEQ_NUM), [optSeqNum](#AN_FUNC_AT_SOCKET_SOCKWRTO_SEQ_NUM)) detects lost or repeated writes:
+
+- the first write which includes it sets the expected sequence number;
+
+- every later write must include the expected sequence number, which advances by the number of bytes written, otherwise it fails with [SOCKET_SEQUENCE_ERROR](#AN_STATUS_SOCKET_SEQUENCE_ERROR).
+
+##### Reading
+
+Received data is announced by the [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) (TCP) or [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) (UDP) AEC. The four methods of reading it are described in [Reading Socket Data](#AN_NOTE_SOCK_READ):
+
+| Method | Enabled by | Data delivered by | Flow control | UDP datagram larger than read |
+|----|----|----|----|----|
+| Basic | Default | [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) output mode 1 | The application reads when ready | The rest of the datagram is discarded |
+| In-band | [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) output mode 3 | [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD), with the pending data information in the response | The application reads when ready; no AECs until all data is read | The rest of the datagram is discarded |
+| Simple asynchronous | [ASYNC_MAX_FRM_SZ](#AN_FUNC_SOCKC_STORE_ID_ASYNC_MAX_FRM_SZ) | [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT)/[WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) with the data | None, data is sent as it arrives | The rest of the datagram is lost |
+| Acknowledged asynchronous | [ASYNC_MAX_FRM_SZ](#AN_FUNC_SOCKC_STORE_ID_ASYNC_MAX_FRM_SZ) and [ASYNC_WIN_SZ](#AN_FUNC_SOCKC_STORE_ID_ASYNC_WIN_SZ) | [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT)/[WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) with the data and a sequence number | Window advanced by [ASYNC_NEXT_SN](#AN_FUNC_SOCKC_STORE_ID_ASYNC_NEXT_SN) | The rest of the datagram is lost |
+
+[WINC_CmdSOCKRDBUF](#AN_FUNC_AT_SOCKET_SOCKRDBUF) reads part of a UDP datagram without discarding the rest, see example [formalpara_title](#EXAMPLE_SOCKRDBUF).
+
+##### Closing
+
+[WINC_CmdSOCKCL](#AN_FUNC_AT_SOCKET_SOCKCL) closes a socket and releases its socket ID.
+
+The [WINC_AEC_ID_SOCKCL](#AN_AEC_AT_SOCKET_SOCKCL) AEC reports that a connected TCP socket was closed by the remote host or timed out. It is not sent when the application closes the socket with [WINC_CmdSOCKCL](#AN_FUNC_AT_SOCKET_SOCKCL). The socket ID remains allocated until [WINC_CmdSOCKCL](#AN_FUNC_AT_SOCKET_SOCKCL) is used. After the remote host closes the connection, data which has not been read can still be read; after a reset it is lost.
+
+When the network interface goes down, for example on [WINC_AEC_ID_WSTALD](#AN_AEC_AT_WSTA_WSTALD) or when the STA is disconnected with [WINC_CmdWSTA](#AN_FUNC_AT_WSTA_WSTA), sockets are not closed and no AEC is sent. The application should close them with [WINC_CmdSOCKCL](#AN_FUNC_AT_SOCKET_SOCKCL).
+
+---
+<a id="AN_NOTE_SOCK_READ"></a>
+#### Reading Socket Data
+
+There are four methods of reading data from a socket, two polled and two asynchronous methods. Polling involves the [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) function and [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT)/[WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AECs. Asynchronous methods involve the [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT)/[WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AECs. The Berkeley Sockets API uses the acknowledged asynchronous method.
+
+##### Basic SOCKRD/AEC method:
+
+[WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) or [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AECs from the device notify the application that data is available to be read. The application then calls [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) with an output mode of 1 to read a number of bytes from the device. After the [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) response further [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) or [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AECs will update the available pending data.
+
+See example [Basic socket read](#EXAMPLE_SOCKRD_1)
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note left of API: Indicates 15 bytes are present
+    API->>APP: AEC:WINC_AEC_ID_SOCKRXT(6,15)
+    Note right of APP: Read 10 bytes in ASCII mode
+    APP->>API: WINC_CmdSOCKRD(6,1,10)
+    Note left of API: 10 bytes returned
+    API->>APP: Response:WINC_CMD_ID_SOCKRD(6,10,"1234567890")
+    API->>APP: Status:WINC_CMD_ID_SOCKRD(OK)
+    Note left of API: An additional 2 bytes have been received
+    API->>APP: AEC:WINC_AEC_ID_SOCKRXT(6,7)
+```
+
+##### In-band SOCKRD/AEC method:
+
+As with the basic [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) method, [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) or [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) announce the presence of data to be read from a socket. If [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) output mode 3 is used the resulting [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) response will include the pending data information and no further AECs will be sent until all data has been consumed.
+
+See example [In-band socket read](#EXAMPLE_SOCKRD_2)
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note left of API: Indicates 20 bytes have been received
+    API->>APP: AEC:WINC_AEC_ID_SOCKRXT(6,20)
+    Note right of APP: Read 10 bytes in ASCII mode with extended information
+    APP->>API: WINC_CmdSOCKRD(6,3,10)
+    Note left of API: 10 bytes returned, indicates 10 bytes remain
+    API->>APP: Response:WINC_CMD_ID_SOCKRD(6,10,10,"1234567890")
+    API->>APP: Status:WINC_CMD_ID_SOCKRD(OK)
+    Note right of APP: Read 4 bytes in ASCII mode with extended information
+    APP->>API: WINC_CmdSOCKRD(6,3,4)
+    Note left of API: 4 bytes returned, indicates 6 bytes remain
+    API->>APP: Response:WINC_CMD_ID_SOCKRD(6,4,6,"abcd")
+    API->>APP: Status:WINC_CMD_ID_SOCKRD(OK)
+```
+
+---
+##### Simple Asynchronous method:
+
+By configuring the [WINC_CmdSOCKC](#AN_FUNC_AT_SOCKET_SOCKC) [ASYNC_MAX_FRM_SZ](#AN_FUNC_SOCKC_STORE_ID_ASYNC_MAX_FRM_SZ) parameter of a socket the application can set the maximum frame size of data to be received asynchronously from the device.
+
+> [!NOTE]
+> For UDP sockets, if the [ASYNC_MAX_FRM_SZ](#AN_FUNC_SOCKC_STORE_ID_ASYNC_MAX_FRM_SZ) value is smaller than the size of a datagram, the remaining data from the datagram will be lost.
+
+When the [ASYNC_MAX_FRM_SZ](#AN_FUNC_SOCKC_STORE_ID_ASYNC_MAX_FRM_SZ) parameter is set, the device will send received socket data to the application without polling from [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD), the data is included in an expanded form of the [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) or [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AEC.
+
+See example [Simple asynchronous socket read](#EXAMPLE_SOCKRXT_1)
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Configure socket ASYNC_MAX_FRM_SZ to be 1500 bytes
+    APP->>API: WINC_CmdSOCKC(6,102,1500)
+    API->>APP: Status:WINC_CMD_ID_SOCKC(OK)
+    Note left of API: 10 bytes received
+    API->>APP: AEC:WINC_AEC_ID_SOCKRXT(6,10,"1234567890")
+    Note left of API: 4 bytes received
+    API->>APP: AEC:WINC_AEC_ID_SOCKRXT(6,4,"abcd")
+```
+
+---
+##### Acknowledged Asynchronous method:
+
+Extending the simple asynchronous method, if the [ASYNC_WIN_SZ](#AN_FUNC_SOCKC_STORE_ID_ASYNC_WIN_SZ) parameter of a socket is also set the device will use a sliding window protocol to send data to the application. In addition to the data included in the [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) or [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AEC a sequence number is added, this represents the sequence number of the first byte of the data provided.
+
+The device will continue to send data via AEC until [ASYNC_WIN_SZ](#AN_FUNC_SOCKC_STORE_ID_ASYNC_WIN_SZ) bytes have been transmitted, after which transmission will cease. To resume transmission the application must update the value of [WINC_CmdSOCKC](#AN_FUNC_AT_SOCKET_SOCKC) parameter [ASYNC_NEXT_SN](#AN_FUNC_SOCKC_STORE_ID_ASYNC_NEXT_SN) to acknowledge reception of data from the device, once this value has been updated the device will continue to send more data until [ASYNC_NEXT_SN](#AN_FUNC_SOCKC_STORE_ID_ASYNC_NEXT_SN) + [ASYNC_WIN_SZ](#AN_FUNC_SOCKC_STORE_ID_ASYNC_WIN_SZ) bytes have been sent.
+
+The application does not need to wait until transmission has ceased before updating [ASYNC_NEXT_SN](#AN_FUNC_SOCKC_STORE_ID_ASYNC_NEXT_SN), this can be done at any time and will ensure the transmission window remains open for subsequent [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) or [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AECs.
+
+Using this method the application can ensure that buffer space is available for receiving data transmission while still receiving data as it arrives at the device.
+
+See example [Acknowledged asynchronous socket read](#EXAMPLE_SOCKRXT_2)
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Configure socket ASYNC_MAX_FRM_SZ to be 1500 bytes
+    APP->>API: WINC_CmdSOCKC(6,102,1500)
+    API->>APP: Status:WINC_CMD_ID_SOCKC(OK)
+    Note right of APP: Configure socket ASYNC_WIN_SZ to be 8 bytes
+    APP->>API: WINC_CmdSOCKC(6,101,8)
+    API->>APP: Status:WINC_CMD_ID_SOCKC(OK)
+    Note left of API: 8 bytes received, sequence number 0 to 7
+    API->>APP: AEC:WINC_AEC_ID_SOCKRXT(6,8,0,"12345678")
+    Note right of APP: Configure ASYNC_NEXT_SN to be 8
+    APP->>API: WINC_CmdSOCKC(6,100,8)
+    API->>APP: Status:WINC_CMD_ID_SOCKC(OK)
+    Note left of API: 8 bytes received, sequence number 8 to 15
+    API->>APP: AEC:WINC_AEC_ID_SOCKRXT(6,8,8,"90abcdef")
+    Note right of APP: Configure ASYNC_NEXT_SN to be 12
+    APP->>API: WINC_CmdSOCKC(6,100,12)
+    API->>APP: Status:WINC_CMD_ID_SOCKC(OK)
+    Note left of API: 4 bytes received, sequence number 16 to 19
+    API->>APP: AEC:WINC_AEC_ID_SOCKRXT(6,4,16,"ghij")
+```
+
+### Socket Errors
+
+Errors which occur after a command has completed are reported by the [WINC_AEC_ID_SOCKERR](#AN_AEC_AT_SOCKET_SOCKERR) AEC. The error code identifies the cause:
+
+- Socket Bind Failed: a TCP connection was not established within 10 seconds of binding to the remote address, or the bind itself failed.
+
+- Socket TLS Failed: the TLS handshake failed or could not be started.
+
+- A DNS error code: the remote host name could not be resolved.
+
 ### Function Reference:
 
+<a id="AN_FUNC_AT_SOCKET_SOCKO"></a>
 #### WINC_CmdSOCKO
 
 ##### Description
@@ -9527,9 +12063,9 @@ This function is used to open a new socket.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -9559,9 +12095,9 @@ This function is used to open a new socket.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -9589,6 +12125,13 @@ WINC_CMDSOCKO_PROTOCOL_VERSION_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
 | Response    | Description          |
 |-------------|----------------------|
 | \<SOCK_ID\> | Socket open response |
@@ -9614,7 +12157,7 @@ WINC_CMDSOCKO_PROTOCOL_VERSION_IGNORE_VAL.</p></td>
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -9623,6 +12166,7 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_SOCKET_SOCKBL"></a>
 #### WINC_CmdSOCKBL
 
 ##### Description
@@ -9661,7 +12205,7 @@ This function is used to bind a socket to a local port.
 <tr>
 <td style="text-align: left;"><p>sockId</p></td>
 <td style="text-align: left;"><p>uint16_t</p></td>
-<td style="text-align: left;"><p>The socket ID.<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO.<br />
 </p></td>
 </tr>
 <tr>
@@ -9671,9 +12215,9 @@ This function is used to bind a socket to a local port.
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>optPendSkts</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_AT_SOCKET_SOCKBL_PEND_SKTS"></span>optPendSkts</p></td>
 <td style="text-align: left;"><p>uint8_t</p></td>
-<td style="text-align: left;"><p>Number of pending sockets connections.<br />
+<td style="text-align: left;"><p>Maximum number of simultaneous connections, limited by the number of free TCP sockets.<br />
 </p>
 <p>optPendSkts will be ignored if its value is<br />
 WINC_CMDSOCKBL_PEND_SKTS_IGNORE_VAL.</p></td>
@@ -9681,7 +12225,15 @@ WINC_CMDSOCKBL_PEND_SKTS_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
+<a id="AN_FUNC_AT_SOCKET_SOCKBR"></a>
 #### WINC_CmdSOCKBR
 
 ##### Description
@@ -9722,25 +12274,25 @@ This function is used to bind a socket to a remote address.
 <tr>
 <td style="text-align: left;"><p>sockId</p></td>
 <td style="text-align: left;"><p>uint16_t</p></td>
-<td style="text-align: left;"><p>The socket ID.<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>typeRmtAddr</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of rmtAddr.<br />
+<td style="text-align: left;"><p>Type of rmtAddr, rmtAddr is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>rmtAddr</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>The address of the remote device.<br />
+<td style="text-align: left;"><p>The address of the remote device. For integer types rmtAddr holds the value, for other types rmtAddr is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenRmtAddr</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of rmtAddr.<br />
+<td style="text-align: left;"><p>Length in bytes of the data rmtAddr points to, ignored for integer types.<br />
 </p></td>
 </tr>
 <tr>
@@ -9752,7 +12304,15 @@ This function is used to bind a socket to a remote address.
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
+<a id="AN_FUNC_AT_SOCKET_SOCKBM"></a>
 #### WINC_CmdSOCKBM
 
 ##### Description
@@ -9793,25 +12353,25 @@ This function is used to bind a socket to a multicast group.
 <tr>
 <td style="text-align: left;"><p>sockId</p></td>
 <td style="text-align: left;"><p>uint16_t</p></td>
-<td style="text-align: left;"><p>The socket ID.<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>typeMcastAddr</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of mcastAddr.<br />
+<td style="text-align: left;"><p>Type of mcastAddr, mcastAddr is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>mcastAddr</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>The address of the multicast group.<br />
+<td style="text-align: left;"><p>The address of the multicast group. For integer types mcastAddr holds the value, for other types mcastAddr is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenMcastAddr</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of mcastAddr.<br />
+<td style="text-align: left;"><p>Length in bytes of the data mcastAddr points to, ignored for integer types.<br />
 </p></td>
 </tr>
 <tr>
@@ -9823,7 +12383,15 @@ This function is used to bind a socket to a multicast group.
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
+<a id="AN_FUNC_AT_SOCKET_SOCKTLS"></a>
 #### WINC_CmdSOCKTLS
 
 ##### Description
@@ -9861,21 +12429,28 @@ This function is used to enable TLS on a socket.
 <tr>
 <td style="text-align: left;"><p>sockId</p></td>
 <td style="text-align: left;"><p>uint16_t</p></td>
-<td style="text-align: left;"><p>The socket ID.<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>tlsConf</p></td>
 <td style="text-align: left;"><p>uint8_t</p></td>
-<td style="text-align: left;"><p>TLS certificate configuration.<br />
+<td style="text-align: left;"><p>TLS configuration index (see WINC_CmdTLSCDA).<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
 | Response    | Description |
 |-------------|-------------|
-| \<SOCK_ID\> | TLS succeed |
+| \<SOCK_ID\> | TLS success |
 
 **Response Format**
 
@@ -9898,7 +12473,7 @@ This function is used to enable TLS on a socket.
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -9907,11 +12482,17 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_SOCKET_SOCKWR"></a>
 #### WINC_CmdSOCKWR
 
 ##### Description
 
 This function is used to send data over a socket that is bound to a remote address and port number.
+
+<a id="AN_NOTE_SOCK_SEQ_NUM"></a>
+**Write Sequence Numbers**
+
+The first write that includes a sequence number sets the starting sequence number for the socket. After that, every write on the socket must include the sequence number, equal to the previous sequence number plus the previous data length (modulo 65536). Otherwise the write fails with Socket Sequence Error. Sockets on which a sequence number has never been used are not affected.
 
     bool WINC_CmdSOCKWR
     (
@@ -9947,7 +12528,7 @@ This function is used to send data over a socket that is bound to a remote addre
 <tr>
 <td style="text-align: left;"><p>sockId</p></td>
 <td style="text-align: left;"><p>uint16_t</p></td>
-<td style="text-align: left;"><p>The socket ID.<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO.<br />
 </p></td>
 </tr>
 <tr>
@@ -9957,9 +12538,9 @@ This function is used to send data over a socket that is bound to a remote addre
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>optSeqNum</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_AT_SOCKET_SOCKWR_SEQ_NUM"></span>optSeqNum</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Sequence number of first byte.<br />
+<td style="text-align: left;"><p>Sequence number of first byte. Once used, required on every subsequent ASCII or hex write.<br />
 </p>
 <p>optSeqNum will be ignored if its value is<br />
 WINC_CMDSOCKWR_SEQ_NUM_IGNORE_VAL.</p></td>
@@ -9975,18 +12556,31 @@ WINC_CMDSOCKWR_SEQ_NUM_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>lenData</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pData.<br />
+<td style="text-align: left;"><p>Length of pData in bytes.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
+<a id="AN_FUNC_AT_SOCKET_SOCKWRTO"></a>
 #### WINC_CmdSOCKWRTO
 
 ##### Description
 
 This function is used to send data to an arbitrary destination using the connectionless UDP protocol.
+
+<a id="AN_NOTE_SOCK_SEQ_NUM_WRTO"></a>
+**Write Sequence Numbers**
+
+The first write that includes a sequence number sets the starting sequence number for the socket. After that, every write on the socket must include the sequence number, equal to the previous sequence number plus the previous data length (modulo 65536). Otherwise the write fails with Socket Sequence Error. Sockets on which a sequence number has never been used are not affected.
 
     bool WINC_CmdSOCKWRTO
     (
@@ -10026,25 +12620,25 @@ This function is used to send data to an arbitrary destination using the connect
 <tr>
 <td style="text-align: left;"><p>sockId</p></td>
 <td style="text-align: left;"><p>uint16_t</p></td>
-<td style="text-align: left;"><p>The socket ID.<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>typeRmtAddr</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of rmtAddr.<br />
+<td style="text-align: left;"><p>Type of rmtAddr, rmtAddr is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>rmtAddr</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>The address of the remote device.<br />
+<td style="text-align: left;"><p>The address of the remote device. For integer types rmtAddr holds the value, for other types rmtAddr is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenRmtAddr</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of rmtAddr.<br />
+<td style="text-align: left;"><p>Length in bytes of the data rmtAddr points to, ignored for integer types.<br />
 </p></td>
 </tr>
 <tr>
@@ -10060,9 +12654,9 @@ This function is used to send data to an arbitrary destination using the connect
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>optSeqNum</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_AT_SOCKET_SOCKWRTO_SEQ_NUM"></span>optSeqNum</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Sequence number of first byte.<br />
+<td style="text-align: left;"><p>Sequence number of first byte. Once used, required on every subsequent ASCII or hex write.<br />
 </p>
 <p>optSeqNum will be ignored if its value is<br />
 WINC_CMDSOCKWRTO_SEQ_NUM_IGNORE_VAL.</p></td>
@@ -10078,11 +12672,18 @@ WINC_CMDSOCKWRTO_SEQ_NUM_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>lenData</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pData.<br />
+<td style="text-align: left;"><p>Length of pData in bytes.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
 
 ---
 <a id="AN_FUNC_AT_SOCKET_SOCKRD"></a>
@@ -10092,17 +12693,27 @@ WINC_CMDSOCKWRTO_SEQ_NUM_IGNORE_VAL.</p></td>
 
 This function is used to read data from a socket.
 
-Two AECs present notification of data received by the DCE:
+Two AECs present notification of data received by the device:
 
 - [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) indicates UDP data has been received.
 
 - [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) indicates TCP data has been received.
 
-The DTE is responsible for retrieving the datagram/stream data via the [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) function.
+The application is responsible for retrieving the datagram/stream data via the [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) function.
 
-For TCP sockets the DCE will indicate, via [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT), the number of bytes of data which are currently available for reading via the [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) function. The DCE may issue multiple [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) AECs as data is received. When requesting data via the [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) function the DTE may receive less data than request, the number of bytes provided by the DCE will be declared in the [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) response before the data is presented. The DTE may request less data than that declared by the [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) AEC as being available, the remaining data will be available for subsequent reading.
+For TCP sockets the device will indicate, via [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT), the number of bytes of data which are currently available for reading via the [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) function. The device may issue multiple [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) AECs as data is received. When requesting data via the [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) function the application may receive less data than request, the number of bytes provided by the device will be declared in the [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) response before the data is presented. The application may request less data than that declared by the [WINC_AEC_ID_SOCKRXT](#AN_AEC_AT_SOCKET_SOCKRXT) AEC as being available, the remaining data will be available for subsequent reading.
 
-For UDP sockets the DCE will indicate, via [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU), the number of bytes of data which were received in the oldest datagram received by the DCE. Only a single [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) will be issued by the DCE even if subsequent UDP datagrams are received. Reading data from the UDP socket via the [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) function will read and discard the current datagram, if less data is requested than was indicated by the [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AEC the remaining unread data in the datagram will be discarded.
+For UDP sockets the device will indicate, via [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU), the number of bytes of data which were received in the oldest datagram received by the device. Only a single [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) will be issued by the device even if subsequent UDP datagrams are received. Reading data from the UDP socket via the [WINC_CmdSOCKRD](#AN_FUNC_AT_SOCKET_SOCKRD) function will read and discard the current datagram, if less data is requested than was indicated by the [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCKET_SOCKRXU) AEC the remaining unread data in the datagram will be discarded.
+
+**Output Modes**
+
+- **1**: the data is returned in the response.
+
+- **3**: as mode 1, with the remaining pending data (and for UDP, the number of pending datagrams and the sender’s address and port) included in the response. No further receive AECs are sent until the pending data has been read.
+
+Binary output mode (2) is not available through this interface.
+
+The length is limited to the amount of data available. For TCP sockets a length of 0 returns no data; for UDP sockets it reads a zero-length datagram.
 
     bool WINC_CmdSOCKRD
     (
@@ -10136,19 +12747,19 @@ For UDP sockets the DCE will indicate, via [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCK
 <tr>
 <td style="text-align: left;"><p>sockId</p></td>
 <td style="text-align: left;"><p>uint16_t</p></td>
-<td style="text-align: left;"><p>The socket ID.<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>outputMode</p></td>
 <td style="text-align: left;"><p>uint8_t</p></td>
-<td style="text-align: left;"><p>The format the DTE wishes to receive the data.<br />
+<td style="text-align: left;"><p>Output format of the data.<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -10161,17 +12772,17 @@ For UDP sockets the DCE will indicate, via [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCK
 <tr>
 <td style="text-align: left;"><p>1</p></td>
 <td style="text-align: left;"><p>ASCII</p></td>
-<td style="text-align: left;"><p>ASCII or hex string.</p></td>
+<td style="text-align: left;"><p>Data returned in the response.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>2</p></td>
 <td style="text-align: left;"><p>BINARY</p></td>
-<td style="text-align: left;"><p>Binary.</p></td>
+<td style="text-align: left;"><p>Raw binary (AT interface only).</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>3</p></td>
 <td style="text-align: left;"><p>ASCII_EXT</p></td>
-<td style="text-align: left;"><p>ASCII or hex string with extended information.</p></td>
+<td style="text-align: left;"><p>Data returned in the response, with pending data information.</p></td>
 </tr>
 </tbody>
 </table></td>
@@ -10179,11 +12790,18 @@ For UDP sockets the DCE will indicate, via [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCK
 <tr>
 <td style="text-align: left;"><p>length</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>The number of bytes the DTE wishes to read.<br />
+<td style="text-align: left;"><p>Maximum number of bytes to read.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response | Description |
 |----|----|
@@ -10212,7 +12830,7 @@ For UDP sockets the DCE will indicate, via [WINC_AEC_ID_SOCKRXU](#AN_AEC_AT_SOCK
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -10268,6 +12886,7 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_SOCKET_SOCKRDBUF"></a>
 #### WINC_CmdSOCKRDBUF
 
 ##### Description
@@ -10306,19 +12925,19 @@ This function is used to read data from a socket buffer (UDP only).
 <tr>
 <td style="text-align: left;"><p>sockId</p></td>
 <td style="text-align: left;"><p>uint16_t</p></td>
-<td style="text-align: left;"><p>The socket ID.<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>outputMode</p></td>
 <td style="text-align: left;"><p>uint8_t</p></td>
-<td style="text-align: left;"><p>The format the DTE wishes to receive the data.<br />
+<td style="text-align: left;"><p>Output format of the data.<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -10331,17 +12950,17 @@ This function is used to read data from a socket buffer (UDP only).
 <tr>
 <td style="text-align: left;"><p>1</p></td>
 <td style="text-align: left;"><p>ASCII</p></td>
-<td style="text-align: left;"><p>ASCII or hex string.</p></td>
+<td style="text-align: left;"><p>Data returned in the response.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>2</p></td>
 <td style="text-align: left;"><p>BINARY</p></td>
-<td style="text-align: left;"><p>Binary.</p></td>
+<td style="text-align: left;"><p>Raw binary (AT interface only).</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>3</p></td>
 <td style="text-align: left;"><p>ASCII_EXT</p></td>
-<td style="text-align: left;"><p>ASCII or hex string with extended information.</p></td>
+<td style="text-align: left;"><p>Data returned in the response, with pending data information.</p></td>
 </tr>
 </tbody>
 </table></td>
@@ -10349,16 +12968,22 @@ This function is used to read data from a socket buffer (UDP only).
 <tr>
 <td style="text-align: left;"><p>length</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>The number of bytes the DTE wishes to read.<br />
+<td style="text-align: left;"><p>Maximum number of bytes to read.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
 | Response | Description |
 |----|----|
 | \<SOCK_ID\>,\<LENGTH\>,\<DATA\> | Socket read response |
-| \<SOCK_ID\>,\<LENGTH\>,\<PEND_DATA\>,\<DATA\> | Socket read response (TCP extended) |
 | \<SOCK_ID\>,\<LENGTH\>,\<PEND_DATA\>,\<PEND_DATAGRAM\>,\<RMT_ADDR\>,\<RMT_PORT\>,\<DATA\> | Socket read response (UDP extended) |
 
 **Response Format**
@@ -10382,7 +13007,7 @@ This function is used to read data from a socket buffer (UDP only).
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -10438,6 +13063,7 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_SOCKET_SOCKCL"></a>
 #### WINC_CmdSOCKCL
 
 ##### Description
@@ -10474,11 +13100,18 @@ This function is used to close a socket.
 <tr>
 <td style="text-align: left;"><p>sockId</p></td>
 <td style="text-align: left;"><p>uint16_t</p></td>
-<td style="text-align: left;"><p>The socket ID.<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response    | Description           |
 |-------------|-----------------------|
@@ -10505,7 +13138,7 @@ This function is used to close a socket.
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -10518,7 +13151,7 @@ Positive unsigned 16-bit value<br />
 
 ##### Description
 
-This function is used to present a list of the WINC’s open sockets/connections.
+This function is used to present a list of the device’s open sockets/connections.
 
     bool WINC_CmdSOCKLST
     (
@@ -10550,13 +13183,20 @@ This function is used to present a list of the WINC’s open sockets/connections
 <tr>
 <td style="text-align: left;"><p>optSockId</p></td>
 <td style="text-align: left;"><p>uint16_t</p></td>
-<td style="text-align: left;"><p>The socket ID.<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO.<br />
 </p>
 <p>optSockId will be ignored if its value is<br />
 WINC_CMDSOCKLST_SOCK_ID_IGNORE_VAL.</p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response | Description |
 |----|----|
@@ -10583,7 +13223,7 @@ WINC_CMDSOCKLST_SOCK_ID_IGNORE_VAL.</p></td>
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -10596,9 +13236,9 @@ Positive unsigned 16-bit value<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -10653,6 +13293,7 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_SOCKET_SOCKC"></a>
 #### WINC_CmdSOCKC
 
 ##### Description
@@ -10695,7 +13336,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optSockId</p></td>
 <td style="text-align: left;"><p>uint16_t</p></td>
-<td style="text-align: left;"><p>The socket ID.<br />
+<td style="text-align: left;"><p>Socket ID, as returned by SOCKO.<br />
 </p>
 <p>optSockId will be ignored if its value is<br />
 WINC_CMDSOCKC_SOCK_ID_IGNORE_VAL.</p></td>
@@ -10703,7 +13344,7 @@ WINC_CMDSOCKC_SOCK_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDSOCKC_ID_IGNORE_VAL.</p></td>
@@ -10711,27 +13352,35 @@ WINC_CMDSOCKC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
-| Response       | Description   |
-|----------------|---------------|
-| \<ID\>,\<VAL\> | Read response |
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response                | Description       |
+|-------------------------|-------------------|
+| \<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| \<ID\>,\<VAL\>          | Read response     |
 
 **Response Format**
 
@@ -10750,6 +13399,20 @@ WINC_CMDSOCKC_ID_IGNORE_VAL.</p></td>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
+</p></td>
+</tr>
 <tr>
 <td style="text-align: left;"><p>&lt;ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
@@ -10792,9 +13455,9 @@ WINC_CMDSOCKC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -10826,9 +13489,9 @@ WINC_CMDSOCKC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -10856,7 +13519,7 @@ WINC_CMDSOCKC_ID_IGNORE_VAL.</p></td>
 <td style="text-align: left;"><p>SO_KEEPALIVE</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
-<td style="text-align: left;"><p>Socket keep alive timeout (TCP)<br />
+<td style="text-align: left;"><p>Socket keep alive timeout in milliseconds (TCP), 0 disables<br />
 <br />
 Unsigned 16-bit value<br />
 </p></td>
@@ -10890,9 +13553,9 @@ Valid range is 1460 to 32768<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -10926,28 +13589,28 @@ Valid range is 1460 to 32768<br />
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>100</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_SOCKC_STORE_ID_ASYNC_NEXT_SN"></span> 100</p></td>
 <td style="text-align: left;"><p>ASYNC_NEXT_SN</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
-<td style="text-align: left;"><p>Async next sequence number<br />
-</p></td>
+<td style="text-align: left;"><p>Async next sequence number (acknowledgement)<br />
+Acknowledges received data up to this sequence number and reopens the receive window. Must lie within the current window.</p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>101</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_SOCKC_STORE_ID_ASYNC_WIN_SZ"></span> 101</p></td>
 <td style="text-align: left;"><p>ASYNC_WIN_SZ</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
-<td style="text-align: left;"><p>Async window size<br />
-</p></td>
+<td style="text-align: left;"><p>Async window size in bytes, 0 for no window. Default is 0<br />
+When non-zero, asynchronously delivered data carries a sequence number and delivery stops once this many bytes are unacknowledged.</p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>102</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_SOCKC_STORE_ID_ASYNC_MAX_FRM_SZ"></span> 102</p></td>
 <td style="text-align: left;"><p>ASYNC_MAX_FRM_SZ</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
-<td style="text-align: left;"><p>Async maximum frame size<br />
-</p></td>
+<td style="text-align: left;"><p>Async maximum frame size in bytes, 0 disables async delivery. Default is 0<br />
+When non-zero, received data is delivered asynchronously in the socket receive AEC, up to this many bytes per AEC.</p></td>
 </tr>
 </tbody>
 </table>
@@ -10955,6 +13618,7 @@ Valid range is 1460 to 32768<br />
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_SOCKET_SOCKIND"></a>
 #### WINC_AEC_ID_SOCKIND
 
 ##### Description
@@ -10986,7 +13650,7 @@ Valid range is 1460 to 32768<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11067,7 +13731,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11140,7 +13804,7 @@ Unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11205,6 +13869,7 @@ Unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_AEC_AT_SOCKET_SOCKCL"></a>
 #### WINC_AEC_ID_SOCKCL
 
 ##### Description
@@ -11236,7 +13901,7 @@ Unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11245,6 +13910,7 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_AEC_AT_SOCKET_SOCKTLS"></a>
 #### WINC_AEC_ID_SOCKTLS
 
 ##### Description
@@ -11253,7 +13919,7 @@ Positive unsigned 16-bit value<br />
 
 | AEC         | Description |
 |-------------|-------------|
-| \<SOCK_ID\> | TLS succeed |
+| \<SOCK_ID\> | TLS success |
 
 **AEC Syntax**
 
@@ -11276,7 +13942,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11285,15 +13951,16 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_AEC_AT_SOCKET_SOCKERR"></a>
 #### WINC_AEC_ID_SOCKERR
 
 ##### Description
 
 **Socket error.**
 
-| AEC                        | Description     |
-|----------------------------|-----------------|
-| \<SOCK_ID\>,\<ERROR_CODE\> | TCP bind failed |
+| AEC                        | Description                  |
+|----------------------------|------------------------------|
+| \<SOCK_ID\>,\<ERROR_CODE\> | Socket error, see error code |
 
 **AEC Syntax**
 
@@ -11316,7 +13983,7 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;SOCK_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The socket ID<br />
+<td style="text-align: left;"><p>Socket ID<br />
 <br />
 Positive unsigned 16-bit value<br />
 </p></td>
@@ -11443,13 +14110,13 @@ sequenceDiagram
 sequenceDiagram
     participant APP as App
     participant API as API
-    Note right of APP: Enable server domain verification
+    Note right of APP: Enable server domain verification (enabled by default)
     APP->>API: WINC_CmdTLSC(1,41,1)
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
     Note right of APP: Specify server domain name
     APP->>API: WINC_CmdTLSC(1,6,"ServerDomain")
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
-    Note right of APP: Enable server authentication
+    Note right of APP: Enable server authentication (enabled by default)
     APP->>API: WINC_CmdTLSC(1,40,1)
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
     Note right of APP: Specify file name of CA certificate
@@ -11463,8 +14130,8 @@ sequenceDiagram
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
 ```
 
-<a id="EXAMPLE_12de0326b22680d3b9cc3d612dba34e5f4d023fe"></a>
-**Open a TLS client socket with AT+SOCK**
+<a id="EXAMPLE_b727ea9918f20ca000a04c56d63af4f37dafd8a6"></a>
+**Open a TLS client socket**
 
 ```mermaid
 sequenceDiagram
@@ -11472,9 +14139,9 @@ sequenceDiagram
     participant API as API
     Note right of APP: Open a TCP socket
     APP->>API: WINC_CmdSOCKO(2)
-    API->>APP: Status:WINC_CMD_ID_SOCKO(OK)
     Note left of API: Socket created
-    API->>APP: AEC:WINC_AEC_ID_SOCKO(17603)
+    API->>APP: Response:WINC_CMD_ID_SOCKO(17603)
+    API->>APP: Status:WINC_CMD_ID_SOCKO(OK)
     Note right of APP: Upgrade socket to TLS, using configuration 1
     APP->>API: WINC_CmdSOCKTLS(17603,1)
     API->>APP: Status:WINC_CMD_ID_SOCKTLS(OK)
@@ -11502,7 +14169,7 @@ sequenceDiagram
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
     Note right of APP: Specify file name of server DH parameters (DHE cipher suite only)
     APP->>API: WINC_CmdTLSC(2,8,"MyDhParams")
-    API->>APP: Status:WINC_CMD_ID_TLSC(0K)
+    API->>APP: Status:WINC_CMD_ID_TLSC(OK)
     Note right of APP: Disable client authentication
     APP->>API: WINC_CmdTLSC(2,40,0)
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
@@ -11511,8 +14178,8 @@ sequenceDiagram
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
 ```
 
-<a id="EXAMPLE_a70e12e9f2deb08dda4c674bca8584fd9c59e257"></a>
-**Open a TLS server socket with AT+SOCK**
+<a id="EXAMPLE_2768fe54a6516136aa956658c21d99e275b3d9d0"></a>
+**Open a TLS server socket**
 
 ```mermaid
 sequenceDiagram
@@ -11520,19 +14187,19 @@ sequenceDiagram
     participant API as API
     Note right of APP: Open a TCP socket
     APP->>API: WINC_CmdSOCKO(2)
-    API->>APP: Status:WINC_CMD_ID_SOCKO(OK)
     Note left of API: Socket created
-    API->>APP: AEC:WINC_AEC_ID_SOCKO(16037)
+    API->>APP: Response:WINC_CMD_ID_SOCKO(16037)
+    API->>APP: Status:WINC_CMD_ID_SOCKO(OK)
     Note right of APP: Upgrade socket to TLS, using configuration 2
     APP->>API: WINC_CmdSOCKTLS(16037,2)
     API->>APP: Status:WINC_CMD_ID_SOCKTLS(OK)
     Note right of APP: Bind socket to local port 443
     APP->>API: WINC_CmdSOCKBL(16037,443)
     API->>APP: Status:WINC_CMD_ID_SOCKBL(OK)
-    Note left of API: New socket connection on port 443
-    API->>APP: AEC:WINC_AEC_ID_SOCKIND(16037,"1.2.3.4",443,"11.22.33.44",12345)
-    Note left of API: Socket upgraded to TLS
-    API->>APP: AEC:WINC_AEC_ID_SOCKTLS(16037)
+    Note left of API: New socket 16038 connected on port 443
+    API->>APP: AEC:WINC_AEC_ID_SOCKIND(16038,"1.2.3.4",443,"11.22.33.44",12345)
+    Note left of API: Socket 16038 upgraded to TLS
+    API->>APP: AEC:WINC_AEC_ID_SOCKTLS(16038)
 ```
 
 <a id="EXAMPLE_SOCKRDBUF"></a>
@@ -11554,14 +14221,15 @@ sequenceDiagram
     API->>APP: AEC:WINC_AEC_ID_SOCKRXU(7,"1.2.3.4",1234,100,1)
     Note right of APP: Read first 10 bytes of datagram
     APP->>API: WINC_CmdSOCKRDBUF(7,1,10)
-    API->>APP: Response:WINC_CMD_ID_SOCKRDBUF(=7,10,[11223344556677889900])
-    Note right of APP: Read second 10 bytes of datagram
-    APP->>API: WINC_CmdSOCKRDBUF(7,1,10)
-    API->>APP: Response:WINC_CMD_ID_SOCKRDBUF(=7,10,[AABBCCDDEEFF11223344])
+    API->>APP: Response:WINC_CMD_ID_SOCKRDBUF(7,10,[11223344556677889900])
     API->>APP: Status:WINC_CMD_ID_SOCKRDBUF(OK)
-    Note right of APP: Read first 10 bytes of next datagram and discard remaining (and buffered)
+    Note right of APP: Read next 10 bytes of the same datagram
+    APP->>API: WINC_CmdSOCKRDBUF(7,1,10)
+    API->>APP: Response:WINC_CMD_ID_SOCKRDBUF(7,10,[AABBCCDDEEFF11223344])
+    API->>APP: Status:WINC_CMD_ID_SOCKRDBUF(OK)
+    Note right of APP: Discard rest of current datagram, read first 10 bytes of next datagram
     APP->>API: WINC_CmdSOCKRD(7,1,10)
-    API->>APP: Response:WINC_CMD_ID_SOCKRDBUF(=7,10,[1234567890ABCDEF0011])
+    API->>APP: Response:WINC_CMD_ID_SOCKRD(7,10,[1234567890ABCDEF0011])
     API->>APP: Status:WINC_CMD_ID_SOCKRD(OK)
 ```
 
@@ -11569,8 +14237,24 @@ sequenceDiagram
 <a id="AN_MOD_TIME"></a>
 ## TIME (Module ID = 16)
 
+### Introduction
+
+The TIME module sets and reads the system time. Three formats are supported:
+
+- UNIX: seconds since 1970-01-01.
+
+- NTP: seconds since 1900-01-01.
+
+- RFC3339: a string of the form YYYY-MM-DDTHH:MM:SS.00Z.
+
+A query with [WINC_CmdTIME](#AN_FUNC_AT_TIME_TIME) reports the time in a [WINC_AEC_ID_TIME](#AN_AEC_AT_TIME_TIME) AEC followed by the command status. The time is set with [WINC_CmdTIMEUTCSEC](#AN_FUNC_AT_TIME_TIMEUTCSEC) or [WINC_CmdTIMERFC](#AN_FUNC_AT_TIME_TIMERFC).
+
+Until the time is set it counts from 1970-01-01 at boot. When the SNTP client is enabled, each synchronisation overwrites a manually set time. The time is not retained across a reset.
+
+---
 ### Function Reference:
 
+<a id="AN_FUNC_AT_TIME_TIME"></a>
 #### WINC_CmdTIME
 
 ##### Description
@@ -11585,13 +14269,15 @@ Three formats of time are supported, two are in UTC seconds and one is a string 
 
 3.  RFC3339 / ISO-8601 - String representation of date/time
 
-RFC3338 / ISO-8601 format represents the time as:
+RFC3339 / ISO-8601 format represents the time as:
 
-    YYYY-MM-DDTHH:MM:SS.ssZ
+    YYYY-MM-DDTHH:MM:SS.00Z
+
+The two fractional-second digits must be present but are ignored; times are reported with ".00".
 
 For example:
 
-    2019-02-28T12:34:56.01Z - 28th February 2019, 12:34 PM 56.01 seconds (UTC+0)
+    2019-02-28T12:34:56.00Z - 28th February 2019, 12:34 PM 56 seconds (UTC+0)
 
     bool WINC_CmdTIME
     (
@@ -11627,9 +14313,9 @@ For example:
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -11662,7 +14348,15 @@ WINC_CMDTIME_FORMAT_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
+<a id="AN_FUNC_AT_TIME_TIMEUTCSEC"></a>
 #### WINC_CmdTIMEUTCSEC
 
 ##### Description
@@ -11704,9 +14398,9 @@ This function is used to set or query the system time.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -11743,7 +14437,15 @@ This function is used to set or query the system time.
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
+<a id="AN_FUNC_AT_TIME_TIMERFC"></a>
 #### WINC_CmdTIMERFC
 
 ##### Description
@@ -11787,15 +14489,23 @@ This function is used to set or query the system time.
 <tr>
 <td style="text-align: left;"><p>lenDateTime</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pDateTime.<br />
+<td style="text-align: left;"><p>Length of pDateTime in bytes, strings are not NUL terminated so the length must not include a terminator.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_TIME_TIME"></a>
 #### WINC_AEC_ID_TIME
 
 ##### Description
@@ -11843,17 +14553,95 @@ BYTE_ARRAY<br />
 
 Transport Layer Security (TLS) establishes an encrypted communication channel between a client and server, ensuring confidentiality and integrity of exchanged data.
 
-The WINCS02 can establish a TLS session in either client mode or server mode. The TLS configuration parameters described in this module are used in conjunction with the [SOCK](#AN_MOD_SOCKET), [MQTT](#AN_MOD_MQTT), and [WSTA](#AN_MOD_WSTA) modules to enable secure connections.
+The WINCS02 can establish a TLS session in either client mode or server mode. The TLS configuration parameters described in this module are used in conjunction with the [SOCK](#AN_MOD_SOCKET), [MQTT](#AN_MOD_MQTT), [HTTP](#AN_MOD_HTTP), [OTA](#AN_MOD_OTA), [DNS](#AN_MOD_DNS) and [WSTA](#AN_MOD_WSTA) modules to enable secure connections.
 
+#### Quick Start: TLS Client
+
+1.  Load the CA certificate which signed the server’s certificate using the [FS](#AN_MOD_FS) module, with file type 1 (certificate), see [WINC_CmdFSLOAD](#AN_FUNC_AT_FS_FLFS_FSLOAD). The certificate may be in PEM or DER format; a PEM file may contain several certificates. File names are limited to 32 characters. The file system supplied with the WINCS02 includes a set of root CA certificates, list them with [WINC_CmdFSOP](#AN_FUNC_AT_FS_FLFS_FSOP).
+
+2.  Make sure the system time is valid. Certificates are checked against the system time, which counts from 1970-01-01 until it is set, so the CA certificate fails date validation until the time is set. Wait for the [WINC_AEC_ID_TIME](#AN_AEC_AT_TIME_TIME) AEC from the [SNTP](#AN_MOD_SNTP) client, or set the time with [WINC_CmdTIMEUTCSEC](#AN_FUNC_AT_TIME_TIMEUTCSEC) or [WINC_CmdTIMERFC](#AN_FUNC_AT_TIME_TIMERFC). By default the SNTP client only uses an NTP server supplied by DHCP; set [NTP_STATIC](#AN_FUNC_SNTPC_STORE_ID_NTP_STATIC) and [NTP_SVR](#AN_FUNC_SNTPC_STORE_ID_NTP_SVR) to use a specific server.
+
+3.  Configure one of the four TLS configurations with [WINC_CmdTLSC](#AN_FUNC_AT_TLS_TLSC):
+
+    - [CA_CERT_NAME](#AN_FUNC_TLSC_STORE_ID_CA_CERT_NAME): the CA certificate file name, with or without its extension. The file must already be loaded.
+
+    - [DOMAIN_NAME](#AN_FUNC_TLSC_STORE_ID_DOMAIN_NAME): the server’s domain name, used for domain name verification. It is not taken from the host name used to connect.
+
+    - [SERVER_NAME](#AN_FUNC_TLSC_STORE_ID_SERVER_NAME): the name sent in the Server Name Indication extension. It is not set automatically; many cloud services require it.
+
+    - [CERT_NAME](#AN_FUNC_TLSC_STORE_ID_CERT_NAME) and [PRI_KEY_NAME](#AN_FUNC_TLSC_STORE_ID_PRI_KEY_NAME): only needed if the server authenticates the client.
+
+4.  Use the configuration with [WINC_CmdSOCKTLS](#AN_FUNC_AT_SOCKET_SOCKTLS), or with the TLS configuration element of [MQTTC](#AN_FUNC_MQTTC_STORE_ID_TLS_CONF), [HTTPC](#AN_FUNC_HTTPC_STORE_ID_TLS_CONF), [OTAC](#AN_FUNC_OTAC_STORE_ID_TLS_CONF), [DNSC](#AN_FUNC_DNSC_STORE_ID_TLS_CONF) or [WSTAC](#AN_FUNC_WSTAC_STORE_ID_ENT_CRED_TLS_CONF).
+
+See example [Basic TLS client configuration](#EXAMPLE_SOCKTLSCLI).
+
+Only TLS 1.2 is supported. A TLS configuration cannot be changed while it is in use; [WINC_CmdTLSC](#AN_FUNC_AT_TLS_TLSC) fails with [STORE_UPDATE_BLOCKED](#AN_STATUS_STORE_UPDATE_BLOCKED).
+
+---
+##### Server Mode
+
+A new TLS configuration has peer authentication and domain name verification enabled, in server mode as well as client mode. A server which does not authenticate its clients must disable both with [PEER_AUTH](#AN_FUNC_TLSC_STORE_ID_PEER_AUTH) and [PEER_DOMAIN_VERIFY](#AN_FUNC_TLSC_STORE_ID_PEER_DOMAIN_VERIFY), otherwise the [WINC_AEC_ID_TLSERR](#AN_AEC_AT_TLS_TLSERR) AEC reports CA Cert Missing or Peer Domain Missing. A server needs [CERT_NAME](#AN_FUNC_TLSC_STORE_ID_CERT_NAME) and [PRI_KEY_NAME](#AN_FUNC_TLSC_STORE_ID_PRI_KEY_NAME), and [DH_PARAM_NAME](#AN_FUNC_TLSC_STORE_ID_DH_PARAM_NAME) if DHE cipher suites are used.
+
+See example [Basic TLS server configuration](#EXAMPLE_SOCKTLSSRV).
+
+#### Troubleshooting
+
+Errors in a TLS configuration are reported by the [WINC_AEC_ID_TLSERR](#AN_AEC_AT_TLS_TLSERR) AEC when a connection using it starts:
+
+- [CA Cert Missing](#AN_STATUS_TLS_CA_CERT_MISSING): peer authentication is enabled and no CA certificate is set.
+
+- [CA Cert Validation](#AN_STATUS_TLS_CA_CERT_VALIDATION): the CA certificate file could not be parsed.
+
+- [CA Cert Date Validation](#AN_STATUS_TLS_CA_CERT_DATE_VALIDATION): the system time has not been set, or the CA certificate has expired.
+
+- [Key Pair Incomplete](#AN_STATUS_TLS_KEY_PAIR_INCOMPLETE): only one of the certificate and private key is set.
+
+- [Peer Domain Missing](#AN_STATUS_TLS_PEER_DOMAIN_MISSING): domain name verification is enabled and no domain name is set.
+
+TLS handshake failures are reported by the module using the configuration:
+
+- SOCK: [WINC_AEC_ID_SOCKERR](#AN_AEC_AT_SOCKET_SOCKERR) with [Socket TLS Failed](#AN_STATUS_SOCKET_TLS_FAILED).
+
+- HTTP: [WINC_AEC_ID_HTTPERR](#AN_AEC_AT_HTTP_HTTPERR) with [HTTP TLS Failed](#AN_STATUS_HTTP_TLS_FAILED).
+
+- OTA: [WINC_AEC_ID_OTAERR](#AN_AEC_AT_OTA_OTAERR) with [TLS Error](#AN_STATUS_OTA_TLS_ERROR).
+
+- MQTT: [WINC_AEC_ID_MQTTCONN](#AN_AEC_AT_MQTT_MQTTCONN) reporting disconnected.
+
+- WSTA (Enterprise): [WINC_AEC_ID_WSTAERR](#AN_AEC_AT_WSTA_WSTAERR) with [STA Connection Failed](#AN_STATUS_STA_CONN_FAILED).
+
+The wolfSSL error code is only reported through the [SYSLOG](#AN_MOD_SYSLOG) module. Enable it with [WINC_CmdSYSLOGC](#AN_FUNC_AT_SYSLOG_SYSLOGC) and look for a [WINC_AEC_ID_SYSLOG](#AN_AEC_AT_SYSLOG_SYSLOG) AEC from the TLS module containing "wolfSSL error: \<code\>". Common codes, see [TLS Error Codes](#AN_TLS_ERROR_CODES) for the full list:
+
+- -188 ASN_NO_SIGNER_E: the CA certificate did not sign the server’s certificate.
+
+- -322 DOMAIN_NAME_MISMATCH: the domain name does not match the server’s certificate.
+
+- -150 ASN_BEFORE_DATE_E or -151 ASN_AFTER_DATE_E: the server’s certificate is outside its validity period, or the system time has not been set.
+
+- -155 ASN_SIG_CONFIRM_E: a certificate signature could not be verified.
+
+---
 #### TLS configuration
 
 Set TLS parameters using the [WINC_CmdTLSC](#AN_FUNC_AT_TLS_TLSC) and [WINC_CmdTLSCSC](#AN_FUNC_AT_TLS_TLSCSC) functions.
+
+A new TLS configuration has the following security options enabled by default:
+
+- Peer authentication ([PEER_AUTH](#AN_FUNC_TLSC_STORE_ID_PEER_AUTH)): a CA certificate must be provided via [CA_CERT_NAME](#AN_FUNC_TLSC_STORE_ID_CA_CERT_NAME).
+
+- Peer domain name verification ([PEER_DOMAIN_VERIFY](#AN_FUNC_TLSC_STORE_ID_PEER_DOMAIN_VERIFY)): the expected domain name must be provided via [DOMAIN_NAME](#AN_FUNC_TLSC_STORE_ID_DOMAIN_NAME).
+
+- Server renegotiation info required ([SERVER_RENEG_INFO](#AN_FUNC_TLSC_STORE_ID_SERVER_RENEG_INFO), client mode only).
+
+- Session caching ([SESSION_CACHING](#AN_FUNC_TLSC_STORE_ID_SESSION_CACHING), client mode only).
+
+If a required certificate or domain name is not configured, the TLS handshake fails. Peer authentication and domain name verification apply in both client and server mode; a server that does not authenticate its clients must disable them.
 
 See examples [Basic TLS client configuration](#EXAMPLE_SOCKTLSCLI) and [Basic TLS server configuration](#EXAMPLE_SOCKTLSSRV).
 
 ##### Certificate and Private Key
 
-The X.509 certificate and the corresponding private key are required for the peer to authenticate the DCE.
+The X.509 certificate and the corresponding private key are required for the peer to authenticate the device.
 
 The certificate file name can be specified via [CERT_NAME](#AN_FUNC_TLSC_STORE_ID_CERT_NAME) and must be in PEM or DER format. If the file contains multiple certificates, it must be in PEM format. The private key file name can be specified via [PRI_KEY_NAME](#AN_FUNC_TLSC_STORE_ID_PRI_KEY_NAME) and must be in PEM or DER format. If the private key is encrypted, the password must also be provided via [PRI_KEY_PASSWORD](#AN_FUNC_TLSC_STORE_ID_PRI_KEY_PASSWORD).
 
@@ -11869,17 +14657,18 @@ The server name is configured via [SERVER_NAME](#AN_FUNC_TLSC_STORE_ID_SERVER_NA
 
 Peer authentication validates the peer’s certificate chain against trusted CA certificates provided in the CA certificate file.
 
-When peer authentication is enabled via [PEER_AUTH](#AN_FUNC_TLSC_STORE_ID_PEER_AUTH), a valid CA certificate file name must be provided via [CA_CERT_NAME](#AN_FUNC_TLSC_STORE_ID_CA_CERT_NAME). If the file contains multiple certificates, it must be in PEM format.
+Peer authentication is enabled by default and is controlled by [PEER_AUTH](#AN_FUNC_TLSC_STORE_ID_PEER_AUTH). When it is enabled, a valid CA certificate file name must be provided via [CA_CERT_NAME](#AN_FUNC_TLSC_STORE_ID_CA_CERT_NAME). If the file contains multiple certificates, it must be in PEM format.
 
 Peer authentication is recommended in client mode.
 
+---
 ##### Domain Name Verification
 
 Domain name verification confirms the peer’s certificate was issued for the expected server by matching the configured domain name against the certificate’s Subject Alternative Name (SAN), or Common Name (CN) if no SAN is present.
 
-When domain name verification is enabled via [PEER_DOMAIN_VERIFY](#AN_FUNC_TLSC_STORE_ID_PEER_DOMAIN_VERIFY), the expected domain name must be provided via [DOMAIN_NAME](#AN_FUNC_TLSC_STORE_ID_DOMAIN_NAME).
+Domain name verification is enabled by default and is controlled by [PEER_DOMAIN_VERIFY](#AN_FUNC_TLSC_STORE_ID_PEER_DOMAIN_VERIFY). When it is enabled, the expected domain name must be provided via [DOMAIN_NAME](#AN_FUNC_TLSC_STORE_ID_DOMAIN_NAME).
 
-Peer domain verification is recommented in client mode.
+Peer domain verification is recommended in client mode.
 
 ##### Cipher Suites
 
@@ -11905,11 +14694,12 @@ When signing is enabled via [EXTCRYPTO_OPS](#AN_FUNC_TLSC_STORE_ID_EXTCRYPTO_OPS
 
 See example [TLS client configuration with external crypto device](#EXAMPLE_EXTCRYPTO_TLS)
 
+---
 ##### Server Renegotiation Extension
 
 The TLS renegotiation info extension was introduced to address the TLS renegotiation vulnerability (CVE-2009-3555). Servers that are patched against this vulnerability include the renegotiation info extension during the TLS handshake.
 
-When the server renegotiation info ([SERVER_RENEG_INFO](#AN_FUNC_TLSC_STORE_ID_SERVER_RENEG_INFO)) is configured as "required", the client rejects connections to servers that do not provide it. Othwerise, the client will connect even if the server does not send the extension. "required" is the recommented setting unless connecting to legacy servers that do not support the security patch. This option is only applicable to client mode.
+When the server renegotiation info ([SERVER_RENEG_INFO](#AN_FUNC_TLSC_STORE_ID_SERVER_RENEG_INFO)) is configured as "required", the client rejects connections to servers that do not provide it. Otherwise, the client will connect even if the server does not send the extension. "required" is the recommended setting unless connecting to legacy servers that do not support the security patch. This option is only applicable to client mode.
 
 ##### Session Caching
 
@@ -12028,6 +14818,7 @@ When a TLS configuration parameter is modified, the previously cached session is
 </table>
 
 ---
+<a id="AN_TLS_ERROR_CODES"></a>
 ### TLS Error Codes
 
 To assist with debugging TLS issues, error codes from wolfSSL can be obtained by enabling logging via [WINC_CmdSYSLOGC](#AN_FUNC_AT_SYSLOG_SYSLOGC).
@@ -12952,22 +15743,22 @@ To assist with debugging TLS issues, error codes from wolfSSL can be obtained by
 <tr>
 <td>GETTIME_ERROR</td>
 <td>-337</td>
-<td>gettimeofday failed ???</td>
+<td>gettimeofday() error</td>
 </tr>
 <tr>
 <td>GETITIMER_ERROR</td>
 <td>-338</td>
-<td>getitimer failed ???</td>
+<td>getitimer() error</td>
 </tr>
 <tr>
 <td>SIGACT_ERROR</td>
 <td>-339</td>
-<td>sigaction failed ???</td>
+<td>sigaction() error</td>
 </tr>
 <tr>
 <td>SETITIMER_ERROR</td>
 <td>-340</td>
-<td>setitimer failed ???</td>
+<td>setitimer() error</td>
 </tr>
 <tr>
 <td>LENGTH_ERROR</td>
@@ -13157,7 +15948,7 @@ To assist with debugging TLS issues, error codes from wolfSSL can be obtained by
 <tr>
 <td>EXTKEYUSE_AUTH_E</td>
 <td>-386</td>
-<td>ExtKeyUse server</td>
+<td>Extended Key Usage server/client auth not set</td>
 </tr>
 <tr>
 <td>SEND_OOB_READ_E</td>
@@ -13372,7 +16163,7 @@ To assist with debugging TLS issues, error codes from wolfSSL can be obtained by
 <tr>
 <td>UNSUPPORTED_EXTENSION</td>
 <td>-429</td>
-<td>TLSX not requested by client</td>
+<td>TLS extension not requested by the client</td>
 </tr>
 <tr>
 <td>PRF_MISSING</td>
@@ -13392,12 +16183,12 @@ To assist with debugging TLS issues, error codes from wolfSSL can be obtained by
 <tr>
 <td>TCA_INVALID_ID_TYPE</td>
 <td>-433</td>
-<td>TLSX TCA ID type invalid</td>
+<td>TLS extension Trusted CA ID type invalid</td>
 </tr>
 <tr>
 <td>TCA_ABSENT_ERROR</td>
 <td>-434</td>
-<td>TLSX</td>
+<td>TLS extension Trusted CA ID response absent</td>
 </tr>
 <tr>
 <td>UNSUPPORTED_SUITE</td>
@@ -13485,7 +16276,7 @@ WINC_CMDTLSC_CONF_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDTLSC_ID_IGNORE_VAL.</p></td>
@@ -13493,28 +16284,35 @@ WINC_CMDTLSC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
-| Response          | Description   |
-|-------------------|---------------|
-| \<CONF\>,\<CONF\> | List response |
-| \<ID\>,\<VAL\>    | Read response |
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response                | Description       |
+|-------------------------|-------------------|
+| \<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| \<ID\>,\<VAL\>          | Read response     |
 
 **Response Format**
 
@@ -13534,12 +16332,17 @@ WINC_CMDTLSC_ID_IGNORE_VAL.</p></td>
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>&lt;CONF&gt;</p></td>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>Configuration number<br />
-<br />
-Valid range is 1 to 4<br />
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
 </p></td>
 </tr>
 <tr>
@@ -13584,9 +16387,9 @@ Valid range is 1 to 4<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -13686,9 +16489,9 @@ Maximum length of string is 32<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -13720,9 +16523,9 @@ Maximum length of string is 32<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -13745,13 +16548,13 @@ Maximum length of string is 32<br />
 <td style="text-align: left;"><p>PEER_AUTH</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
-<td style="text-align: left;"><p>Peer authentication<br />
+<td style="text-align: left;"><p>Peer authentication. Default is enabled<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -13779,13 +16582,13 @@ Maximum length of string is 32<br />
 <td style="text-align: left;"><p>PEER_DOMAIN_VERIFY</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
-<td style="text-align: left;"><p>Peer domain verification<br />
+<td style="text-align: left;"><p>Peer domain verification. Default is enabled<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -13813,13 +16616,13 @@ Maximum length of string is 32<br />
 <td style="text-align: left;"><p>SERVER_RENEG_INFO</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
-<td style="text-align: left;"><p>Client mode: require renegotiation info from server<br />
+<td style="text-align: left;"><p>Client mode: require renegotiation info from server. Default is required<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -13847,13 +16650,13 @@ Maximum length of string is 32<br />
 <td style="text-align: left;"><p>SESSION_CACHING</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
-<td style="text-align: left;"><p>Client mode: cache and reuse session IDs<br />
+<td style="text-align: left;"><p>Client mode: cache and reuse session IDs. Default is enabled<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -13934,7 +16737,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>lenDigest</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pDigest.<br />
+<td style="text-align: left;"><p>Length of pDigest in bytes.<br />
 </p></td>
 </tr>
 <tr>
@@ -13948,10 +16751,17 @@ WINC_CMDTLSCDA_ALGO_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
-| Response          | Description   |
-|-------------------|---------------|
-| \<CONF\>,\<CONF\> | List response |
-| \<ID\>,\<VAL\>    | Read response |
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response                | Description       |
+|-------------------------|-------------------|
+| \<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| \<ID\>,\<VAL\>          | Read response     |
 
 **Response Format**
 
@@ -13971,12 +16781,17 @@ WINC_CMDTLSCDA_ALGO_IGNORE_VAL.</p></td>
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>&lt;CONF&gt;</p></td>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>Configuration number<br />
-<br />
-Valid range is 1 to 4<br />
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
 </p></td>
 </tr>
 <tr>
@@ -14020,7 +16835,7 @@ Valid range is 1 to 4<br />
 <td style="text-align: left;"><p>List of hash digest/algorithm pairs<br />
 This is a multiple value parameter<br />
 with an ID range 9.0 to 9.3<br />
-</p></td>
+See <a href="#AN_NOTE_TLSC_CERT_DIGESTS">Certificate Digests</a> below.</p></td>
 </tr>
 </tbody>
 </table>
@@ -14062,6 +16877,15 @@ with an ID range 9.0 to 9.3<br />
 </tr>
 </tbody>
 </table>
+
+<a id="AN_NOTE_TLSC_CERT_DIGESTS"></a>
+**Certificate Digests**
+
+Up to four digest/algorithm pairs can be stored. [WINC_CmdTLSCDA](#AN_FUNC_AT_TLS_TLSCDA) with a digest and algorithm adds the pair after the existing entries; this fails if four are already stored. [WINC_CmdTLSC](#AN_FUNC_AT_TLS_TLSC) with ID 9.\<n\> replaces that entry.
+
+The digest length must match the algorithm: SHA1 20 bytes, SHA2-224 28 bytes, SHA2-256 32 bytes, SHA2-384 48 bytes, SHA2-512 64 bytes.
+
+[WINC_CmdTLSCDA](#AN_FUNC_AT_TLS_TLSCDA) with an empty digest removes all pairs. [WINC_CmdTLSC](#AN_FUNC_AT_TLS_TLSC) with ID 9.\<n\> and an empty digest removes that entry only, and later entries move down one place. A pair cannot be removed by specifying its digest.
 
 ---
 <a id="AN_FUNC_AT_TLS_TLSCSC"></a>
@@ -14115,7 +16939,7 @@ WINC_CMDTLSCSC_CSL_IDX_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDTLSCSC_ID_IGNORE_VAL.</p></td>
@@ -14123,27 +16947,35 @@ WINC_CMDTLSCSC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
-| Response       | Description   |
-|----------------|---------------|
-| \<ID\>,\<VAL\> | Read response |
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response                | Description       |
+|-------------------------|-------------------|
+| \<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| \<ID\>,\<VAL\>          | Read response     |
 
 **Response Format**
 
@@ -14162,6 +16994,20 @@ WINC_CMDTLSCSC_ID_IGNORE_VAL.</p></td>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
+</p></td>
+</tr>
 <tr>
 <td style="text-align: left;"><p>&lt;ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
@@ -14204,9 +17050,9 @@ WINC_CMDTLSCSC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -14254,6 +17100,7 @@ with an ID range 2.0 to 2.31<br />
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_TLS_TLSERR"></a>
 #### WINC_AEC_ID_TLSERR
 
 ##### Description
@@ -14334,13 +17181,29 @@ sequenceDiagram
 <a id="AN_MOD_WAP"></a>
 ## WAP (Module ID = 18)
 
+### Introduction
+
+The WAP module operates the WINCS02 as a soft access point.
+
+Configure the soft AP with [WINC_CmdWAPC](#AN_FUNC_AT_WAP_WAPC) and then start it with [WINC_CmdWAP](#AN_FUNC_AT_WAP_WAP). While the soft AP is running only [MAC_BLOCKLIST](#AN_FUNC_WAPC_STORE_ID_MAC_BLOCKLIST) may be changed.
+
+The soft AP cannot be started while the station is connected, or while a scan, periodic scan or the beacon service is running.
+
+Unless the network interface is configured as layer 2 only, starting the soft AP sets the interface address and starts the DHCP server (see [DHCP](#AN_MOD_DHCP)) and the DNS server.
+
+Clients are reported by the [WINC_AEC_ID_WAPSC](#AN_AEC_AT_WAP_WAPSC) AEC when they connect, [WINC_AEC_ID_WAPAIP](#AN_AEC_AT_WAP_WAPAIP) when they are assigned an address and [WINC_AEC_ID_WAPSD](#AN_AEC_AT_WAP_WAPSD) when they disconnect. Up to 10 clients are supported; the association IDs are the same as those used by the [ASSOC](#AN_MOD_ASSOC) module.
+
+Stopping the soft AP completes asynchronously, the state continues to read as 1 until the soft AP has fully stopped.
+
+---
 ### Function Reference:
 
+<a id="AN_FUNC_AT_WAP_WAPC"></a>
 #### WINC_CmdWAPC
 
 ##### Description
 
-This function is used to read or set the WINC’s hotspot access point configuration.
+This function is used to read or set the device’s hotspot access point configuration.
 
 This function is a configuration function which supports setting and getting parameter values. The behaviour of configuration functions is described in general in the [Configuration Functions](#_configuration_functions) section.
 
@@ -14377,7 +17240,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDWAPC_ID_IGNORE_VAL.</p></td>
@@ -14385,23 +17248,30 @@ WINC_CMDWAPC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response       | Description   |
 |----------------|---------------|
@@ -14466,9 +17336,9 @@ WINC_CMDWAPC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -14504,9 +17374,9 @@ Maximum length of string is 32<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -14572,9 +17442,9 @@ Valid range is 1 to 13<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -14618,6 +17488,18 @@ Valid range is 60 to 86400<br />
 </p></td>
 </tr>
 <tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WAPC_STORE_ID_MAC_BLOCKLIST"></span> 20</p></td>
+<td style="text-align: left;"><p>MAC_BLOCKLIST</p></td>
+<td style="text-align: left;"><p>MACADDR<br />
+</p></td>
+<td style="text-align: left;"><p>MAC address blocklist entry<br />
+<br />
+Valid range is 0 to 3<br />
+This is a multiple value parameter<br />
+with an ID range 20.0 to 20.3<br />
+</p></td>
+</tr>
+<tr>
 <td style="text-align: left;"><p>50</p></td>
 <td style="text-align: left;"><p>MFP_TYPE</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
@@ -14626,9 +17508,9 @@ Valid range is 60 to 86400<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -14660,11 +17542,12 @@ Valid range is 60 to 86400<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_WAP_WAP"></a>
 #### WINC_CmdWAP
 
 ##### Description
 
-This function is used to enable the WINC’s hotspot access point functionality.
+This function is used to enable the device’s hotspot access point functionality.
 
     bool WINC_CmdWAP
     (
@@ -14700,9 +17583,9 @@ This function is used to enable the WINC’s hotspot access point functionality.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -14730,9 +17613,16 @@ WINC_CMDWAP_STATE_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
-| Response  | Description                |
-|-----------|----------------------------|
-| \<STATE\> | Query state (disconnected) |
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response  | Description |
+|-----------|-------------|
+| \<STATE\> | Query state |
 
 **Response Format**
 
@@ -14759,9 +17649,9 @@ WINC_CMDWAP_STATE_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -14790,6 +17680,7 @@ WINC_CMDWAP_STATE_IGNORE_VAL.</p></td>
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_WAP_WAPAIP"></a>
 #### WINC_AEC_ID_WAPAIP
 
 ##### Description
@@ -14835,6 +17726,7 @@ WINC_CMDWAP_STATE_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_WAP_WAPSC"></a>
 #### WINC_AEC_ID_WAPSC
 
 ##### Description
@@ -14880,6 +17772,7 @@ WINC_CMDWAP_STATE_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_WAP_WAPSD"></a>
 #### WINC_AEC_ID_WAPSD
 
 ##### Description
@@ -14964,8 +17857,32 @@ WINC_CMDWAP_STATE_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_MOD_WSCN"></a>
 ## WSCN (Module ID = 19)
 
+### Introduction
+
+The WSCN module scans for access points. Two independent scan types are provided, each with its own configuration:
+
+- One-shot active or passive scans, configured with [WINC_CmdWSCNC](#AN_FUNC_AT_WSCN_WSCNC) and started with [WINC_CmdWSCN](#AN_FUNC_AT_WSCN_WSCN).
+
+- Periodic passive scans, configured with [WINC_CmdWSCNPC](#AN_FUNC_AT_WSCN_WSCNPC) and started and stopped with [WINC_CmdWSCNP](#AN_FUNC_AT_WSCN_WSCNP).
+
+Each access point found is reported by a [WINC_AEC_ID_WSCNIND](#AN_AEC_AT_WSCN_WSCNIND) AEC if [ASYNC_NOTIFY](#AN_FUNC_WSCNC_STORE_ID_ASYNC_NOTIFY) is set, followed by a [WINC_AEC_ID_WSCNDONE](#AN_AEC_AT_WSCN_WSCNDONE) AEC with the number of results. The 8 results with the strongest RSSI may be read from [SCAN_RESULTS](#AN_FUNC_WSCNC_STORE_ID_SCAN_RESULTS) after the scan.
+
+Results may be filtered by minimum RSSI ([RSSI_THRESH](#AN_FUNC_WSCNC_STORE_ID_RSSI_THRESH)), by security type ([SEC_FILTER](#AN_FUNC_WSCNC_STORE_ID_SEC_FILTER)) and by up to 4 SSIDs ([FILT_LIST](#AN_FUNC_WSCNC_STORE_ID_FILT_LIST)), an SSID ending in `*` matches any SSID beginning with the preceding characters.
+
+Scanning is allowed while the station is connected, but not while it is connecting or disconnecting.
+
+#### Periodic Scanning
+
+A periodic scan sweeps the configured channels once every [INTERVAL](#AN_FUNC_WSCNPC_STORE_ID_INTERVAL) milliseconds. The duration of a sweep is the passive slot time multiplied by the number of slots and the number of channels; the interval must be at least twice the sweep duration and at least the sweep duration plus 50 ms, otherwise the scan will not start.
+
+Periodic scanning requires the soft AP to be stopped. The [WINC_CmdWSCNPC](#AN_FUNC_AT_WSCN_WSCNPC) configuration cannot be changed while a periodic scan is running.
+
+Stopping a periodic scan allows the current sweep to complete and then sends the [WINC_AEC_ID_WSCNPDONE](#AN_AEC_AT_WSCN_WSCNPDONE) AEC. If a sweep fails to start the periodic scan ends with the [WINC_AEC_ID_WSCNPERR](#AN_AEC_AT_WSCN_WSCNPERR) AEC.
+
+---
 ### Function Reference:
 
 <a id="AN_FUNC_AT_WSCN_WSCNC"></a>
@@ -15010,7 +17927,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDWSCNC_ID_IGNORE_VAL.</p></td>
@@ -15018,23 +17935,30 @@ WINC_CMDWSCNC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response       | Description   |
 |----------------|---------------|
@@ -15099,9 +18023,9 @@ WINC_CMDWSCNC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -15126,7 +18050,7 @@ WINC_CMDWSCNC_ID_IGNORE_VAL.</p></td>
 </p></td>
 <td style="text-align: left;"><p>Channel to scan (or 0 for all channels)<br />
 <br />
-Valid range is 1 to 13<br />
+Valid range is 0 to 13<br />
 </p></td>
 </tr>
 <tr>
@@ -15136,7 +18060,7 @@ Valid range is 1 to 13<br />
 </p></td>
 <td style="text-align: left;"><p>The time in milliseconds to wait for probe responses<br />
 <br />
-Unsigned 16-bit value<br />
+Valid range is 10 to 1500<br />
 </p></td>
 </tr>
 <tr>
@@ -15146,7 +18070,7 @@ Unsigned 16-bit value<br />
 </p></td>
 <td style="text-align: left;"><p>The time in milliseconds to wait for beacons<br />
 <br />
-Unsigned 16-bit value<br />
+Valid range is 10 to 1500<br />
 </p></td>
 </tr>
 <tr>
@@ -15156,7 +18080,7 @@ Unsigned 16-bit value<br />
 </p></td>
 <td style="text-align: left;"><p>Number of scan slots<br />
 <br />
-Unsigned 8-bit value<br />
+Positive unsigned 8-bit value<br />
 </p></td>
 </tr>
 <tr>
@@ -15166,11 +18090,11 @@ Unsigned 8-bit value<br />
 </p></td>
 <td style="text-align: left;"><p>Number of probes sent per active slot<br />
 <br />
-Unsigned 8-bit value<br />
+Valid range is 1 to 2<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>6</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_WSCNC_STORE_ID_RSSI_THRESH"></span> 6</p></td>
 <td style="text-align: left;"><p>RSSI_THRESH</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
@@ -15180,7 +18104,7 @@ Signed 8-bit value<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_WSCNC_STORE_ID_SEC_FILTER"></span> 7</p></td>
 <td style="text-align: left;"><p>SEC_FILTER</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
@@ -15188,9 +18112,9 @@ Signed 8-bit value<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -15239,7 +18163,7 @@ Signed 8-bit value<br />
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>8</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_WSCNC_STORE_ID_ASYNC_NOTIFY"></span> 8</p></td>
 <td style="text-align: left;"><p>ASYNC_NOTIFY</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
@@ -15247,9 +18171,9 @@ Signed 8-bit value<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -15273,11 +18197,11 @@ Signed 8-bit value<br />
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>10</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_WSCNC_STORE_ID_FILT_LIST"></span> 10</p></td>
 <td style="text-align: left;"><p>FILT_LIST</p></td>
 <td style="text-align: left;"><p>BYTE_ARRAY<br />
 </p></td>
-<td style="text-align: left;"><p>SSID filter list<br />
+<td style="text-align: left;"><p>SSID filter list, an entry ending with '*' matches any SSID with the preceding prefix<br />
 This is a multiple value parameter<br />
 with an ID range 10.0 to 10.3<br />
 </p></td>
@@ -15315,7 +18239,7 @@ CH12</p></td>
 <td style="text-align: center;"><p><sup>10</sup><br />
 CH11</p></td>
 <td style="text-align: center;"><p><sup>9</sup><br />
-CH1</p></td>
+CH10</p></td>
 <td style="text-align: center;"><p><sup>8</sup><br />
 CH9</p></td>
 </tr>
@@ -15341,9 +18265,9 @@ CH1</p></td>
 </table>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -15427,6 +18351,677 @@ CH1</p></td>
 </table></td>
 </tr>
 <tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WSCNC_STORE_ID_SCAN_RESULTS"></span> 20</p></td>
+<td style="text-align: left;"><p>SCAN_RESULTS</p></td>
+<td style="text-align: left;"><p>Complex Value<sup>1</sup><br />
+(Read Only)</p></td>
+<td style="text-align: left;"><p>Top scan results from previous scan, ordered by RSSI<br />
+This is a multiple value parameter<br />
+with an ID range 20.0 to 20.7<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+| No. | Complex Value                                        | Description    |
+|-----|------------------------------------------------------|----------------|
+| 1   | \<RSSI\>,\<SEC_TYPE\>,\<CHANNEL\>,\<BSSID\>,\<SSID\> | Scan indicator |
+
+**Complex Value Syntax**
+
+<table>
+<caption>Complex Value Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;RSSI&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Received signal strength<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;SEC_TYPE&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>Recommended security type to use when connecting to this AP<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>-1</p></td>
+<td style="text-align: left;"><p>NA</p></td>
+<td style="text-align: left;"><p>Unknown or unsupported.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>OPEN</p></td>
+<td style="text-align: left;"><p>Open.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>2</p></td>
+<td style="text-align: left;"><p>WPA2_PER_MM</p></td>
+<td style="text-align: left;"><p>WPA2-Personal Mixed Mode.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>3</p></td>
+<td style="text-align: left;"><p>WPA2_PER</p></td>
+<td style="text-align: left;"><p>WPA2-Personal.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>4</p></td>
+<td style="text-align: left;"><p>WPA3_PER_TM</p></td>
+<td style="text-align: left;"><p>WPA3-Personal Transition Mode.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>5</p></td>
+<td style="text-align: left;"><p>WPA3_PER</p></td>
+<td style="text-align: left;"><p>WPA3-Personal.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>6</p></td>
+<td style="text-align: left;"><p>WPA2_ENT_MM</p></td>
+<td style="text-align: left;"><p>WPA2-Enterprise Mixed Mode.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p>WPA2_ENT</p></td>
+<td style="text-align: left;"><p>WPA2-Enterprise.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>8</p></td>
+<td style="text-align: left;"><p>WPA3_ENT_TM</p></td>
+<td style="text-align: left;"><p>WPA3-Enterprise Transition Mode.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>9</p></td>
+<td style="text-align: left;"><p>WPA3_ENT</p></td>
+<td style="text-align: left;"><p>WPA3-Enterprise.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;CHANNEL&gt;</p></td>
+<td style="text-align: left;"><p>Integer<br />
+</p></td>
+<td style="text-align: left;"><p>The channel number of the detected device<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;BSSID&gt;</p></td>
+<td style="text-align: left;"><p>String<br />
+</p></td>
+<td style="text-align: left;"><p>The BSSID of detected device<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;SSID&gt;</p></td>
+<td style="text-align: left;"><p>String<br />
+</p></td>
+<td style="text-align: left;"><p>SSID of detected device<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+---
+<a id="AN_FUNC_AT_WSCN_WSCN"></a>
+#### WINC_CmdWSCN
+
+##### Description
+
+This function is used to scan for infrastructure networks in range of the device.
+
+    bool WINC_CmdWSCN
+    (
+        WINC_CMD_REQ_HANDLE handle
+        uint8_t actPasv
+    )
+
+<table>
+<caption>Function Parameter Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>handle</p></td>
+<td style="text-align: left;"><p>WINC_CMD_REQ_HANDLE</p></td>
+<td style="text-align: left;"><p>Command request session handle.<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>actPasv</p></td>
+<td style="text-align: left;"><p>uint8_t</p></td>
+<td style="text-align: left;"><p>Flag indicating active or passive scanning.<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>PASSIVE</p></td>
+<td style="text-align: left;"><p>Passive scanning.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>ACTIVE</p></td>
+<td style="text-align: left;"><p>Active scanning.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+</tbody>
+</table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
+---
+<a id="AN_FUNC_AT_WSCN_WSCNPC"></a>
+#### WINC_CmdWSCNPC
+
+##### Description
+
+This function is used to modify or query the behavior of the periodic passive scanning function.
+
+This function is a configuration function which supports setting and getting parameter values. The behaviour of configuration functions is described in general in the [Configuration Functions](#_configuration_functions) section.
+
+    bool WINC_CmdWSCNPC
+    (
+        WINC_CMD_REQ_HANDLE handle
+        int32_t optId
+        WINC_TYPE typeOptVal
+        uintptr_t optVal
+        size_t lenOptVal
+    )
+
+<table>
+<caption>Function Parameter Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>handle</p></td>
+<td style="text-align: left;"><p>WINC_CMD_REQ_HANDLE</p></td>
+<td style="text-align: left;"><p>Command request session handle.<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>optId</p></td>
+<td style="text-align: left;"><p>int32_t</p></td>
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
+</p>
+<p>optId will be ignored if its value is<br />
+WINC_CMDWSCNPC_ID_IGNORE_VAL.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>typeOptVal</p></td>
+<td style="text-align: left;"><p>WINC_TYPE</p></td>
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>optVal</p></td>
+<td style="text-align: left;"><p>uintptr_t</p></td>
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>lenOptVal</p></td>
+<td style="text-align: left;"><p>size_t</p></td>
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response       | Description   |
+|----------------|---------------|
+| \<ID\>,\<VAL\> | Read response |
+
+**Response Format**
+
+<table>
+<caption>Response Element Description</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Any</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+<table>
+<caption>Configuration Parameters (WINC_CFG_PARAM_ID_WSCN_*)</caption>
+<colgroup>
+<col style="width: 4%" />
+<col style="width: 28%" />
+<col style="width: 17%" />
+<col style="width: 49%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">ID</th>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>PRESET</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Configuration preset<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>DEFAULT</p></td>
+<td style="text-align: left;"><p>Default.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WSCNPC_STORE_ID_CHANNEL"></span> 1</p></td>
+<td style="text-align: left;"><p>CHANNEL</p></td>
+<td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
+</p></td>
+<td style="text-align: left;"><p>Channel to scan (or 0 for all channels)<br />
+<br />
+Valid range is 0 to 13<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WSCNPC_STORE_ID_PASV_SLOT_TIME"></span> 3</p></td>
+<td style="text-align: left;"><p>PASV_SLOT_TIME</p></td>
+<td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
+</p></td>
+<td style="text-align: left;"><p>The time in milliseconds to wait for beacons<br />
+<br />
+Valid range is 10 to 1500<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>4</p></td>
+<td style="text-align: left;"><p>NUM_SLOTS</p></td>
+<td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
+</p></td>
+<td style="text-align: left;"><p>Number of scan slots<br />
+<br />
+Positive unsigned 8-bit value<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>6</p></td>
+<td style="text-align: left;"><p>RSSI_THRESH</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>RSSI threshold (or 0 for none)<br />
+<br />
+Signed 8-bit value<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p>SEC_FILTER</p></td>
+<td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
+</p></td>
+<td style="text-align: left;"><p>Security filter, bitmask of:<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0x01</p></td>
+<td style="text-align: left;"><p>PERS</p></td>
+<td style="text-align: left;"><p>Personal.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x02</p></td>
+<td style="text-align: left;"><p>ENT</p></td>
+<td style="text-align: left;"><p>Enterprise.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x04</p></td>
+<td style="text-align: left;"><p>OPEN</p></td>
+<td style="text-align: left;"><p>Open.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x08</p></td>
+<td style="text-align: left;"><p>NA</p></td>
+<td style="text-align: left;"><p>Unknown or unsupported.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x10</p></td>
+<td style="text-align: left;"><p>WPA</p></td>
+<td style="text-align: left;"><p>WPA or WPA2 Mixed Mode.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x20</p></td>
+<td style="text-align: left;"><p>WPA2</p></td>
+<td style="text-align: left;"><p>WPA2.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x40</p></td>
+<td style="text-align: left;"><p>WPA3</p></td>
+<td style="text-align: left;"><p>WPA3 or WPA3 Transition Mode.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>8</p></td>
+<td style="text-align: left;"><p>ASYNC_NOTIFY</p></td>
+<td style="text-align: left;"><p>BOOL<br />
+</p></td>
+<td style="text-align: left;"><p>Asynchronous notification<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>NO_AECS</p></td>
+<td style="text-align: left;"><p>No scan indication AECs are generated.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>USE_AECS</p></td>
+<td style="text-align: left;"><p>Indication AECs are generated.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>10</p></td>
+<td style="text-align: left;"><p>FILT_LIST</p></td>
+<td style="text-align: left;"><p>BYTE_ARRAY<br />
+</p></td>
+<td style="text-align: left;"><p>SSID filter list, an entry ending with '*' matches any SSID with the preceding prefix<br />
+This is a multiple value parameter<br />
+with an ID range 10.0 to 10.3<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>11</p></td>
+<td style="text-align: left;"><p>CHANMASK24</p></td>
+<td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
+</p></td>
+<td style="text-align: left;"><p>Scan-all channel mask (2.4 GHz)<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: center;"><p><sup>15</sup><br />
+-</p></td>
+<td style="text-align: center;"><p><sup>14</sup><br />
+-</p></td>
+<td style="text-align: center;"><p><sup>13</sup><br />
+CH14</p></td>
+<td style="text-align: center;"><p><sup>12</sup><br />
+CH13</p></td>
+<td style="text-align: center;"><p><sup>11</sup><br />
+CH12</p></td>
+<td style="text-align: center;"><p><sup>10</sup><br />
+CH11</p></td>
+<td style="text-align: center;"><p><sup>9</sup><br />
+CH10</p></td>
+<td style="text-align: center;"><p><sup>8</sup><br />
+CH9</p></td>
+</tr>
+<tr>
+<td style="text-align: center;"><p><sup>7</sup><br />
+CH8</p></td>
+<td style="text-align: center;"><p><sup>6</sup><br />
+CH7</p></td>
+<td style="text-align: center;"><p><sup>5</sup><br />
+CH6</p></td>
+<td style="text-align: center;"><p><sup>4</sup><br />
+CH5</p></td>
+<td style="text-align: center;"><p><sup>3</sup><br />
+CH4</p></td>
+<td style="text-align: center;"><p><sup>2</sup><br />
+CH3</p></td>
+<td style="text-align: center;"><p><sup>1</sup><br />
+CH2</p></td>
+<td style="text-align: center;"><p><sup>0</sup><br />
+CH1</p></td>
+</tr>
+</tbody>
+</table>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0x0001</p></td>
+<td style="text-align: left;"><p>CH1</p></td>
+<td style="text-align: left;"><p>Channel 1 - 2412 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0002</p></td>
+<td style="text-align: left;"><p>CH2</p></td>
+<td style="text-align: left;"><p>Channel 2 - 2417 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0004</p></td>
+<td style="text-align: left;"><p>CH3</p></td>
+<td style="text-align: left;"><p>Channel 3 - 2422 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0008</p></td>
+<td style="text-align: left;"><p>CH4</p></td>
+<td style="text-align: left;"><p>Channel 4 - 2427 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0010</p></td>
+<td style="text-align: left;"><p>CH5</p></td>
+<td style="text-align: left;"><p>Channel 5 - 2432 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0020</p></td>
+<td style="text-align: left;"><p>CH6</p></td>
+<td style="text-align: left;"><p>Channel 6 - 2437 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0040</p></td>
+<td style="text-align: left;"><p>CH7</p></td>
+<td style="text-align: left;"><p>Channel 7 - 2442 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0080</p></td>
+<td style="text-align: left;"><p>CH8</p></td>
+<td style="text-align: left;"><p>Channel 8 - 2447 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0100</p></td>
+<td style="text-align: left;"><p>CH9</p></td>
+<td style="text-align: left;"><p>Channel 9 - 2452 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0200</p></td>
+<td style="text-align: left;"><p>CH10</p></td>
+<td style="text-align: left;"><p>Channel 10 - 2457 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0400</p></td>
+<td style="text-align: left;"><p>CH11</p></td>
+<td style="text-align: left;"><p>Channel 11 - 2462 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0800</p></td>
+<td style="text-align: left;"><p>CH12</p></td>
+<td style="text-align: left;"><p>Channel 12 - 2467 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x1000</p></td>
+<td style="text-align: left;"><p>CH13</p></td>
+<td style="text-align: left;"><p>Channel 13 - 2472 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x2000</p></td>
+<td style="text-align: left;"><p>CH14</p></td>
+<td style="text-align: left;"><p>Channel 14 - 2485 MHz.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WSCNPC_STORE_ID_INTERVAL"></span> 12</p></td>
+<td style="text-align: left;"><p>INTERVAL</p></td>
+<td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
+</p></td>
+<td style="text-align: left;"><p>Interval in milliseconds between the start of one periodic sweep and the start of the next. A sweep must fit within half of it, with a further small margin for result retrieval<br />
+<br />
+Valid range is 500 to 600000<br />
+</p></td>
+</tr>
+<tr>
 <td style="text-align: left;"><p>20</p></td>
 <td style="text-align: left;"><p>SCAN_RESULTS</p></td>
 <td style="text-align: left;"><p>Complex Value<sup>1</sup><br />
@@ -15475,9 +19070,9 @@ with an ID range 20.0 to 20.7<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -15565,16 +19160,17 @@ with an ID range 20.0 to 20.7<br />
 </table>
 
 ---
-#### WINC_CmdWSCN
+<a id="AN_FUNC_AT_WSCN_WSCNP"></a>
+#### WINC_CmdWSCNP
 
 ##### Description
 
-This function is used to scan for infrastructure networks in range of the WINC.
+This function is used to start or stop the periodic passive scanning function.
 
-    bool WINC_CmdWSCN
+    bool WINC_CmdWSCNP
     (
         WINC_CMD_REQ_HANDLE handle
-        uint8_t actPasv
+        int32_t optState
     )
 
 <table>
@@ -15599,15 +19195,15 @@ This function is used to scan for infrastructure networks in range of the WINC.
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>actPasv</p></td>
-<td style="text-align: left;"><p>uint8_t</p></td>
-<td style="text-align: left;"><p>Flag indicating active or passive scanning.<br />
+<td style="text-align: left;"><p>optState</p></td>
+<td style="text-align: left;"><p>int32_t</p></td>
+<td style="text-align: left;"><p>State of the periodic scan function.<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -15619,13 +19215,79 @@ This function is used to scan for infrastructure networks in range of the WINC.
 <tbody>
 <tr>
 <td style="text-align: left;"><p>0</p></td>
-<td style="text-align: left;"><p>PASSIVE</p></td>
-<td style="text-align: left;"><p>Passive scanning.</p></td>
+<td style="text-align: left;"><p>DISABLE</p></td>
+<td style="text-align: left;"><p>Disable.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>1</p></td>
-<td style="text-align: left;"><p>ACTIVE</p></td>
-<td style="text-align: left;"><p>Active scanning.</p></td>
+<td style="text-align: left;"><p>ENABLE</p></td>
+<td style="text-align: left;"><p>Enable.</p></td>
+</tr>
+</tbody>
+</table>
+<p>optState will be ignored if its value is<br />
+WINC_CMDWSCNP_STATE_IGNORE_VAL.</p></td>
+</tr>
+</tbody>
+</table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response  | Description |
+|-----------|-------------|
+| \<STATE\> | Query state |
+
+**Response Format**
+
+<table>
+<caption>Response Element Description</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;STATE&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>State of the periodic scan function<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>DISABLE</p></td>
+<td style="text-align: left;"><p>Disabled.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>ENABLE</p></td>
+<td style="text-align: left;"><p>Enabled.</p></td>
 </tr>
 </tbody>
 </table></td>
@@ -15636,6 +19298,7 @@ This function is used to scan for infrastructure networks in range of the WINC.
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_WSCN_WSCNIND"></a>
 #### WINC_AEC_ID_WSCNIND
 
 ##### Description
@@ -15678,9 +19341,9 @@ This function is used to scan for infrastructure networks in range of the WINC.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -15768,6 +19431,7 @@ This function is used to scan for infrastructure networks in range of the WINC.
 </table>
 
 ---
+<a id="AN_AEC_AT_WSCN_WSCNDONE"></a>
 #### WINC_AEC_ID_WSCNDONE
 
 ##### Description
@@ -15801,6 +19465,85 @@ This function is used to scan for infrastructure networks in range of the WINC.
 </p></td>
 <td style="text-align: left;"><p>Number of results returned in this scan operation<br />
 </p></td>
+</tr>
+</tbody>
+</table>
+
+---
+<a id="AN_AEC_AT_WSCN_WSCNPDONE"></a>
+#### WINC_AEC_ID_WSCNPDONE
+
+##### Description
+
+Periodic scanning stopped on request. Sent once when the run ends, after the final sweep has reported its results, and is the only report of the run-wide counters.
+
+| AEC            | Description               |
+|----------------|---------------------------|
+| \<NUM_SWEEPS\> | Periodic scanning stopped |
+
+**AEC Syntax**
+
+<table>
+<caption>AEC Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;NUM_SWEEPS&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Number of sweeps started over the periodic scanning run which has just ended<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+---
+<a id="AN_AEC_AT_WSCN_WSCNPERR"></a>
+#### WINC_AEC_ID_WSCNPERR
+
+##### Description
+
+**A periodic scan ended on a fault rather than by completing.**
+
+| AEC            | Description         |
+|----------------|---------------------|
+| \<ERROR_CODE\> | Periodic scan error |
+
+**AEC Syntax**
+
+<table>
+<caption>AEC Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ERROR_CODE&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Error code<br />
+</p>
+<p>See <a href="#_status_response_codes">Status Response Codes</a></p></td>
 </tr>
 </tbody>
 </table>
@@ -15902,6 +19645,120 @@ sequenceDiagram
     API->>APP: Status:WINC_CMD_ID_WSCNC(OK)
 ```
 
+<a id="EXAMPLE_8b708174983f8fc67c0f6d84e73ff4686d515be3"></a>
+**Setting SSID prefix filters with [WINC_CmdWSCNC](#AN_FUNC_AT_WSCN_WSCNC)**
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Scan for Access Points, no SSID filter set
+    APP->>API: WINC_CmdWSCN(1)
+    API->>APP: Status:WINC_CMD_ID_WSCN(OK)
+    Note left of API: AP on network "SSID01" found on channel 11
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-38,6,11,"00:01:02:03:04:05","SSID01")
+    Note left of API: AP on network "SSID02" found on channel 1
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-40,4,1,"00:03:06:09:0C:0F","SSID02")
+    Note left of API: AP on network "SSID11" found on channel 6
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-35,5,6,"00:04:08:0C:10:14","SSID11")
+    Note left of API: Scan completed, 3 results found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(3)
+    Note right of APP: Add a filter matching every SSID starting with "SSID0"
+    APP->>API: WINC_CmdWSCNC(10,"SSID0*")
+    API->>APP: Status:WINC_CMD_ID_WSCNC(OK)
+    Note right of APP: Scan for Access Points
+    APP->>API: WINC_CmdWSCN(1)
+    API->>APP: Status:WINC_CMD_ID_WSCN(OK)
+    Note left of API: "SSID01" matches the filter prefix
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-38,6,11,"00:01:02:03:04:05","SSID01")
+    Note left of API: "SSID02" matches the filter prefix
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-40,4,1,"00:03:06:09:0C:0F","SSID02")
+    Note left of API: Scan completed, 2 results found, "SSID11" does not match the filter prefix
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(2)
+```
+
+<a id="EXAMPLE_WSCNP_PREFIX_FILTER"></a>
+**Periodic passive scanning with an SSID prefix filter**
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Set the periodic scan channel to 6
+    APP->>API: WINC_CmdWSCNPC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Listen for 500 ms in each scan slot
+    APP->>API: WINC_CmdWSCNPC(3,500)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms
+    APP->>API: WINC_CmdWSCNPC(4,2)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Start a sweep every 5000 ms
+    APP->>API: WINC_CmdWSCNPC(12,5000)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Discard anything weaker than -45 dBm
+    APP->>API: WINC_CmdWSCNPC(6,-45)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Report only matching SSIDs, so beacons from ordinary access points are dropped
+    APP->>API: WINC_CmdWSCNPC(10,"ASSET*")
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Enable periodic scanning, the first sweep starts immediately. All of the scan configuration must be in place by now: it is locked while scanning is enabled
+    APP->>API: WINC_CmdWSCNP(1)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: A matching beacon is detected on channel 6
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-30,0,6,"F8:F0:05:12:34:56","ASSET35")
+    Note left of API: Sweep completed, 1 result found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(1)
+    Note left of API: A later sweep found no matching beacons
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(0)
+    Note right of APP: Stop periodic scanning
+    APP->>API: WINC_CmdWSCNP(0)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: The run is over: 12 sweeps were carried out
+    API->>APP: AEC:WINC_AEC_ID_WSCNPDONE(12)
+```
+
+<a id="EXAMPLE_WSCNP_PAYLOAD_FILTER"></a>
+**Periodic passive scanning with an SSID prefix filter**
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Set the periodic scan channel to 6
+    APP->>API: WINC_CmdWSCNPC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Listen for 500 ms in each scan slot
+    APP->>API: WINC_CmdWSCNPC(3,500)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms
+    APP->>API: WINC_CmdWSCNPC(4,2)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Start a sweep every 5000 ms
+    APP->>API: WINC_CmdWSCNPC(12,5000)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Discard anything weaker than -45 dBm
+    APP->>API: WINC_CmdWSCNPC(6,-45)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Report only SSIDs carrying command payloads
+    APP->>API: WINC_CmdWSCNPC(10,"CMD*")
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Enable periodic scanning, the first sweep starts immediately. All of the scan configuration must be in place by now: it is locked while scanning is enabled
+    APP->>API: WINC_CmdWSCNP(1)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: A sweep which found no matching beacon
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(0)
+    Note left of API: Matching SSID payload received
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-30,0,6,"F8:F0:05:AB:CD:EF","CMD3240138012398502495190247597")
+    Note left of API: Sweep completed, 1 result found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(1)
+    Note right of APP: Stop periodic scanning
+    APP->>API: WINC_CmdWSCNP(0)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: The run is over: 8 sweeps were carried out
+    API->>APP: AEC:WINC_AEC_ID_WSCNPDONE(8)
+```
+
 ---
 <a id="AN_MOD_WSTA"></a>
 ## WSTA (Module ID = 20)
@@ -15911,6 +19768,42 @@ sequenceDiagram
 The WINCS02 supports a wide range of features when operating as a Wi-Fi station (STA). It is designed for robust connectivity, security, and seamless network integration in a variety of applications.
 
 The [WSTA](#AN_MOD_WSTA) module is used to configure the STA, control STA connection and get information about the STA.
+
+#### Quick Start: Connecting to an Access Point
+
+1.  Configure the Access Point’s SSID, security type and credentials with [WINC_CmdWSTAC](#AN_FUNC_AT_WSTA_WSTAC), see example [WPA Personal](#EXAMPLE_WSTA_PERSONAL). The configuration can only be changed while the STA is disconnected, except [ROAMING](#AN_FUNC_WSTAC_STORE_ID_ROAMING).
+
+2.  Select how the STA’s network interface (index 0 by default, see [NETIF](#AN_MOD_NETIF)) obtains its IP address with [WINC_CmdNETIFC](#AN_FUNC_AT_NETIF_NETIFC): the DHCP client ([DHCPC_EN](#AN_FUNC_NETIFC_STORE_ID_DHCPC_EN), enabled by default), or a static address set with [IP_MASK](#AN_FUNC_NETIFC_STORE_ID_IP_MASK) and [GATEWAY](#AN_FUNC_NETIFC_STORE_ID_GATEWAY). If DHCP is disabled and no address is set, a link-local (ZeroConf) address is used.
+
+3.  Start the connection with [WINC_CmdWSTA](#AN_FUNC_AT_WSTA_WSTA). A successful command status indicates the connection attempt has started, not that the STA is connected.
+
+4.  The [WINC_AEC_ID_WSTALU](#AN_AEC_AT_WSTA_WSTALU) AEC reports that the link is up, with the association ID, the BSSID of the Access Point and the channel.
+
+5.  The [WINC_AEC_ID_WSTAAIP](#AN_AEC_AT_WSTA_WSTAAIP) AEC reports each address assigned automatically, by DHCP or ZeroConf for IPv4 and by SLAAC for IPv6. It is sent again when the DHCP lease is renewed or the address changes. A static IPv4 address is not reported.
+
+See example [Connect at Wi-Fi and IP layers](#EXAMPLE_WSTA_CONNECT).
+
+##### Connection Refused
+
+Starting the connection fails with an error status, and no AEC is sent, if:
+
+- the STA is already connecting or connected, or the soft AP is running: STA Connection Not Permitted;
+
+- a scan or periodic scan is in progress: Scan In Progress or Periodic Scan is Running;
+
+- the security configuration is not valid, for example an invalid passphrase, an unsupported security type or a missing Enterprise TLS context: Invalid Parameter.
+
+##### Connection Failed
+
+If the Access Point refuses or does not respond to the connection, or the connection has not completed within [CONN_TIMEOUT](#AN_FUNC_WSTAC_STORE_ID_CONN_TIMEOUT) (10 seconds by default), the [WINC_AEC_ID_WSTAERR](#AN_AEC_AT_WSTA_WSTAERR) AEC is sent with the status STA Connection Failed. The cause is not reported; an incorrect password, an Access Point which cannot be found and an authentication failure all appear the same.
+
+After [WINC_AEC_ID_WSTAERR](#AN_AEC_AT_WSTA_WSTAERR) the STA is disconnected and the WINCS02 does not retry. To retry, start the connection again.
+
+##### Link Loss and Disconnection
+
+The [WINC_AEC_ID_WSTALD](#AN_AEC_AT_WSTA_WSTALD) AEC reports that the link has been lost. The WINCS02 does not reconnect automatically, start the connection again to reconnect. Roaming between Access Points within the same ESSID is handled automatically while connected and is reported by the [WINC_AEC_ID_WSTAROAM](#AN_AEC_AT_WSTA_WSTAROAM) AEC, followed by [WINC_AEC_ID_WSTAAIP](#AN_AEC_AT_WSTA_WSTAAIP) when roaming is configured for layer 3.
+
+Disconnecting with [WINC_CmdWSTA](#AN_FUNC_AT_WSTA_WSTA) completes asynchronously: if the STA was connected the [WINC_AEC_ID_WSTALD](#AN_AEC_AT_WSTA_WSTALD) AEC follows, if it was still connecting no AEC follows. Querying the STA state returns 1 from the start of the connection attempt until the disconnection has completed.
 
 #### Configuring the STA
 
@@ -15926,7 +19819,7 @@ In order to connect the STA to an Access Point (AP), the following parameters mu
 
 Other parameters are optional, with default behaviour if they are not set:
 
-- The AP’s Wi-Fi channel (1-13 or "any"; defaults to "any"): [CHANNEL](#AN_FUNC_WSTAC_STORE_ID_CHANNEL)
+- The AP’s Wi-Fi channel (1-13, or 0 for any; defaults to 0): [CHANNEL](#AN_FUNC_WSTAC_STORE_ID_CHANNEL)
 
 - The AP’s BSSID: [BSSID](#AN_FUNC_WSTAC_STORE_ID_BSSID)
 
@@ -15934,9 +19827,9 @@ Other parameters are optional, with default behaviour if they are not set:
 
 - Disabling of WPA3 Transition modes (defaults to "not modified"): [WPA3_TD](#AN_FUNC_WSTAC_STORE_ID_WPA3_TD)
 
-- Connection attempt timeout (defaults to 100ms): [CONN_TIMEOUT](#AN_FUNC_WSTAC_STORE_ID_CONN_TIMEOUT)
+- Connection attempt timeout in milliseconds (defaults to 10000 ms; 0 disables the timeout): [CONN_TIMEOUT](#AN_FUNC_WSTAC_STORE_ID_CONN_TIMEOUT)
 
-- Roaming configuration (off, layer 2, or layer 3; defaults to layer 3): [ROAMING](#AN_FUNC_WSTAC_STORE_ID_ROAMING)
+- Roaming configuration (disabled, Wi-Fi only, or layer 3; defaults to layer 3): [ROAMING](#AN_FUNC_WSTAC_STORE_ID_ROAMING)
 
 ##### Security types and credentials
 
@@ -15951,11 +19844,11 @@ WPA Enterprise security provides encryption and various methods for authenticati
 
 The WINCS02 STA supports Simple Roaming, which enables faster handover between Access Points within an ESSID for maintained connectivity.
 
-Roaming can be configured at two different layers:
+Roaming can be configured as:
 
-- Layer 2 roaming - moving to another SSID, leaving layers 3 (IP) and above unchanged
+- Wi-Fi only - the STA moves to another AP within the same ESSID; the IP configuration (layer 3 and above) is unchanged
 
-- Layer 3 roaming - as above but also reconfiguring layer 3 via DHCP
+- Layer 3 - as above, and the DHCP lease is also renewed after each roam
 
 #### Controlling STA connection
 
@@ -15988,7 +19881,7 @@ Upon successful authentication, the client and server generate a Pairwise Master
 
 ##### Supported WPA Enterprise methods
 
-To maximise compatibility with a broad range of Enterprise networks, WINCS02 supports the following tunnel and credential methods:
+To maximise compatibility with a broad range of Enterprise networks, the WINCS02 supports the following tunnel and credential methods:
 
 <table>
 <tbody>
@@ -16230,7 +20123,7 @@ sequenceDiagram
 
 ##### Description
 
-This function is used to read or set the WINC’s Wi-Fi station mode configuration.
+This function is used to read or set the device’s Wi-Fi station mode configuration.
 
 This function is a configuration function which supports setting and getting parameter values. The behaviour of configuration functions is described in general in the [Configuration Functions](#_configuration_functions) section.
 
@@ -16267,7 +20160,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDWSTAC_ID_IGNORE_VAL.</p></td>
@@ -16275,23 +20168,30 @@ WINC_CMDWSTAC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response       | Description   |
 |----------------|---------------|
@@ -16356,9 +20256,9 @@ WINC_CMDWSTAC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -16394,9 +20294,9 @@ Maximum length of string is 32<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -16486,7 +20386,7 @@ Valid range is 0 to 13<br />
 <td style="text-align: left;"><p>CONN_TIMEOUT</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>Connection timeout in milliseconds<br />
+<td style="text-align: left;"><p>Connection timeout in milliseconds. 0 disables the timeout. Default is 10000<br />
 <br />
 Valid range is 0 to 0x7FFFFFFF<br />
 </p></td>
@@ -16510,9 +20410,9 @@ Valid range is 0 to 1<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -16567,9 +20467,9 @@ Maximum length of string is 255<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -16612,7 +20512,7 @@ Maximum length of string is 255<br />
 <td style="text-align: left;"><p>ENT_TUNN_TLS_CONF</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>TLS configuration index (see +TLSC) to use for Enterprise tunnel<br />
+<td style="text-align: left;"><p>TLS configuration index (see WINC_CmdTLSCDA) to use for Enterprise tunnel. 0 if not configured<br />
 <br />
 Valid range is 0 to 4<br />
 </p></td>
@@ -16626,9 +20526,9 @@ Valid range is 0 to 4<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -16656,7 +20556,7 @@ Valid range is 0 to 4<br />
 <td style="text-align: left;"><p>ENT_CRED_TLS_CONF</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>TLS configuration index (see +TLSC) to use for Enterprise TLS credentials<br />
+<td style="text-align: left;"><p>TLS configuration index (see WINC_CmdTLSCDA) to use for Enterprise TLS credentials. 0 if not configured<br />
 <br />
 Valid range is 0 to 4<br />
 </p></td>
@@ -16688,9 +20588,9 @@ Maximum length of string is 255<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -16727,9 +20627,9 @@ Maximum length of string is 255<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -16761,7 +20661,7 @@ Maximum length of string is 255<br />
 
 ##### Description
 
-This function is used to control or query the WINC’s station mode functionality.
+This function is used to control or query the device’s station mode functionality.
 
     bool WINC_CmdWSTA
     (
@@ -16797,9 +20697,9 @@ This function is used to control or query the WINC’s station mode functionalit
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -16827,9 +20727,16 @@ WINC_CMDWSTA_STATE_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
-| Response               | Description |
-|------------------------|-------------|
-| \<ASSOC_ID\>,\<STATE\> | State       |
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response  | Description |
+|-----------|-------------|
+| \<STATE\> | State       |
 
 **Response Format**
 
@@ -16849,23 +20756,16 @@ WINC_CMDWSTA_STATE_IGNORE_VAL.</p></td>
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>&lt;ASSOC_ID&gt;</p></td>
-<td style="text-align: left;"><p>INTEGER<br />
-</p></td>
-<td style="text-align: left;"><p>Association ID<br />
-</p></td>
-</tr>
-<tr>
 <td style="text-align: left;"><p>&lt;STATE&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>Connected state<br />
+<td style="text-align: left;"><p>Station state<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -16883,7 +20783,7 @@ WINC_CMDWSTA_STATE_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>1</p></td>
 <td style="text-align: left;"><p>CONNECTED</p></td>
-<td style="text-align: left;"><p>Connected.</p></td>
+<td style="text-align: left;"><p>Connecting, connected or disconnecting.</p></td>
 </tr>
 </tbody>
 </table></td>
@@ -16979,6 +20879,7 @@ WINC_CMDWSTA_STATE_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_WSTA_WSTAERR"></a>
 #### WINC_AEC_ID_WSTAERR
 
 ##### Description
@@ -17057,7 +20958,7 @@ WINC_CMDWSTA_STATE_IGNORE_VAL.</p></td>
 <td style="text-align: left;"><p>&lt;BSSID&gt;</p></td>
 <td style="text-align: left;"><p>STRING<br />
 </p></td>
-<td style="text-align: left;"><p>The BSSID of the Access Point the DCE has connected to<br />
+<td style="text-align: left;"><p>The BSSID of the Access Point the device has connected to<br />
 </p></td>
 </tr>
 <tr>
@@ -17174,21 +21075,64 @@ sequenceDiagram
     Note right of APP: Start connection attempt
     APP->>API: WINC_CmdWSTA(1)
     API->>APP: Status:WINC_CMD_ID_WSTA(OK)
-    Note left of API: Link up: connected on channel 11
-    API->>APP: AEC:WINC_AEC_ID_WSTALU(1,"00:01:02:03:04:05",11)
+    Note left of API: Link up: each connection is given a new association ID
+    API->>APP: AEC:WINC_AEC_ID_WSTALU(2,"00:01:02:03:04:05",11)
     Note left of API: IP address received via auto configuration (DHCP/SLAAC)
-    API->>APP: AEC:WINC_AEC_ID_WSTAAIP(1,"192.168.0.20")
+    API->>APP: AEC:WINC_AEC_ID_WSTAAIP(2,"192.168.0.20")
     Note left of API: STA has roamed
-    API->>APP: AEC:WINC_AEC_ID_WSTAROAM(1)
+    API->>APP: AEC:WINC_AEC_ID_WSTAROAM(2)
     Note left of API: Change in IP address due to layer 3 roaming
-    API->>APP: AEC:WINC_AEC_ID_WSTAAIP(1,"10.1.0.5")
+    API->>APP: AEC:WINC_AEC_ID_WSTAAIP(2,"10.1.0.5")
     Note right of APP: Query STA status
     APP->>API: WINC_CmdWSTA()
     Note left of API: STA is connected
     API->>APP: Response:WINC_CMD_ID_WSTA(1)
     API->>APP: Status:WINC_CMD_ID_WSTA(OK)
     Note left of API: Link down
-    API->>APP: AEC:WINC_AEC_ID_WSTALD()
+    API->>APP: AEC:WINC_AEC_ID_WSTALD(2)
+```
+
+<a id="EXAMPLE_WSTA_BLOCKED_BY_SCAN"></a>
+**[WINC_CmdWSTA](#AN_FUNC_AT_WSTA_WSTA) refused while a scan or periodic**
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Scan for Access Points
+    APP->>API: WINC_CmdWSCN(1)
+    API->>APP: Status:WINC_CMD_ID_WSCN(OK)
+    Note right of APP: Refused: a scan is in progress
+    APP->>API: WINC_CmdWSTA(1)
+    API->>APP: Status:WINC_CMD_ID_WSTA(ERROR:<n>,"Scan In Progress")
+    Note left of API: The scan in flight completes on its own
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(2)
+    Note right of APP: Now accepted
+    APP->>API: WINC_CmdWSTA(1)
+    API->>APP: Status:WINC_CMD_ID_WSTA(OK)
+    API->>APP: AEC:WINC_AEC_ID_WSTALU(1,"00:01:02:03:04:05",6)
+    API->>APP: AEC:WINC_AEC_ID_WSTAAIP(1,"192.168.0.20")
+    Note right of APP: Disconnect
+    APP->>API: WINC_CmdWSTA(0)
+    API->>APP: Status:WINC_CMD_ID_WSTA(OK)
+    Note left of API: Link down
+    API->>APP: AEC:WINC_AEC_ID_WSTALD(1)
+    Note right of APP: Enable periodic scanning
+    APP->>API: WINC_CmdWSCNP(1)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note right of APP: Refused: periodic scanning is running
+    APP->>API: WINC_CmdWSTA(1)
+    API->>APP: Status:WINC_CMD_ID_WSTA(ERROR:<n>,"Periodic Scan is Running")
+    Note right of APP: Disable periodic scanning
+    APP->>API: WINC_CmdWSCNP(0)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: Periodic scanning stopped after 1 sweep
+    API->>APP: AEC:WINC_AEC_ID_WSCNPDONE(1)
+    Note right of APP: Now accepted
+    APP->>API: WINC_CmdWSTA(1)
+    API->>APP: Status:WINC_CMD_ID_WSTA(OK)
+    API->>APP: AEC:WINC_AEC_ID_WSTALU(2,"00:01:02:03:04:05",6)
+    API->>APP: AEC:WINC_AEC_ID_WSTAAIP(2,"192.168.0.20")
 ```
 
 <a id="EXAMPLE_WSTA_ENTERPRISE_TUNNEL"></a>
@@ -17305,18 +21249,29 @@ sequenceDiagram
 <a id="AN_MOD_ASSOC"></a>
 ## ASSOC (Module ID = 22)
 
+### Introduction
+
+The ASSOC module lists the current Wi-Fi associations of the WINCS02. These are the station’s association with its access point, reported with AP_STA set to 0, and the soft AP’s connected clients, reported with AP_STA set to 1.
+
+Each association is reported by an [WINC_AEC_ID_ASSOC](#AN_AEC_AT_ASSOC_ASSOC) AEC which includes its current RSSI. [WINC_CmdASSOC](#AN_FUNC_AT_ASSOC_ASSOC) can also disconnect an association.
+
+The association IDs are the same as those reported by the [WSTA](#AN_MOD_WSTA) and [WAP](#AN_MOD_WAP) modules.
+
+---
 ### Function Reference:
 
+<a id="AN_FUNC_AT_ASSOC_ASSOC"></a>
 #### WINC_CmdASSOC
 
 ##### Description
 
-This function is used to query current WiFi associations.
+This function is used to query or disconnect WiFi associations.
 
     bool WINC_CmdASSOC
     (
         WINC_CMD_REQ_HANDLE handle
         uint16_t optAssocId
+        int32_t optState
     )
 
 <table>
@@ -17348,12 +21303,49 @@ This function is used to query current WiFi associations.
 <p>optAssocId will be ignored if its value is<br />
 WINC_CMDASSOC_ASSOC_ID_IGNORE_VAL.</p></td>
 </tr>
+<tr>
+<td style="text-align: left;"><p>optState</p></td>
+<td style="text-align: left;"><p>int32_t</p></td>
+<td style="text-align: left;"><p>State to set.<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>DISCONNECT</p></td>
+<td style="text-align: left;"><p>Disconnect the association.</p></td>
+</tr>
 </tbody>
 </table>
+<p>optState will be ignored if its value is<br />
+WINC_CMDASSOC_STATE_IGNORE_VAL.</p></td>
+</tr>
+</tbody>
+</table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
 
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_ASSOC_ASSOC"></a>
 #### WINC_AEC_ID_ASSOC
 
 ##### Description
@@ -17400,9 +21392,9 @@ BYTE_ARRAY<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -17445,8 +21437,24 @@ BYTE_ARRAY<br />
 ---
 ## SI (Module ID = 23)
 
+### Introduction
+
+The SI module reports system information. [WINC_CmdSI](#AN_FUNC_AT_SI_SI) returns the system uptime in its response. The filter parameter selects additional statistics which are reported as AECs:
+
+- Wi-Fi memory pool usage, [WINC_AEC_ID_SIMERR](#AN_AEC_AT_SI_SIMERR) and [WINC_AEC_ID_SIMSTAT](#AN_AEC_AT_SI_SIMSTAT).
+
+- Wi-Fi packet counts, [WINC_AEC_ID_SIWPKTS](#AN_AEC_AT_SI_SIWPKTS).
+
+- Heap usage, [WINC_AEC_ID_SIHERR](#AN_AEC_AT_SI_SIHERR) and [WINC_AEC_ID_SIHEAP](#AN_AEC_AT_SI_SIHEAP).
+
+- Stack usage, [WINC_AEC_ID_SISTACK](#AN_AEC_AT_SI_SISTACK).
+
+If no filter is given all statistics are reported, a filter of 0 reports only the uptime.
+
+---
 ### Function Reference:
 
+<a id="AN_FUNC_AT_SI_SI"></a>
 #### WINC_CmdSI
 
 ##### Description
@@ -17487,9 +21495,9 @@ This function is used to query system information.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -17527,6 +21535,13 @@ WINC_CMDSI_FILTER_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
 | Response   | Description |
 |------------|-------------|
 | \<UPTIME\> | Response    |
@@ -17561,6 +21576,7 @@ WINC_CMDSI_FILTER_IGNORE_VAL.</p></td>
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_SI_SIMSTAT"></a>
 #### WINC_AEC_ID_SIMSTAT
 
 ##### Description
@@ -17596,9 +21612,9 @@ WINC_CMDSI_FILTER_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -17673,6 +21689,7 @@ WINC_CMDSI_FILTER_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_SI_SIMERR"></a>
 #### WINC_AEC_ID_SIMERR
 
 ##### Description
@@ -17711,6 +21728,7 @@ WINC_CMDSI_FILTER_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_SI_SIWPKTS"></a>
 #### WINC_AEC_ID_SIWPKTS
 
 ##### Description
@@ -17756,6 +21774,7 @@ WINC_CMDSI_FILTER_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_SI_SIHEAP"></a>
 #### WINC_AEC_ID_SIHEAP
 
 ##### Description
@@ -17822,6 +21841,7 @@ WINC_CMDSI_FILTER_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_SI_SIHERR"></a>
 #### WINC_AEC_ID_SIHERR
 
 ##### Description
@@ -17860,6 +21880,7 @@ WINC_CMDSI_FILTER_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_SI_SISTACK"></a>
 #### WINC_AEC_ID_SISTACK
 
 ##### Description
@@ -17914,8 +21935,26 @@ WINC_CMDSI_FILTER_IGNORE_VAL.</p></td>
 ---
 ## WPROV (Module ID = 25)
 
+### Introduction
+
+The WPROV module provides a TCP server which allows a remote client to send commands to the WINCS02 over the network, using either the ASCII or binary command format. It may be used, for example, to configure the station from a phone connected to the soft AP.
+
+1.  Bring up a network interface with [WAP](#AN_MOD_WAP) or [WSTA](#AN_MOD_WSTA).
+
+2.  Configure the service with [WINC_CmdWPROVC](#AN_FUNC_AT_WPROV_WPROVC). The configuration cannot be changed while the service is running.
+
+3.  Start the service with [WINC_CmdWPROV](#AN_FUNC_AT_WPROV_WPROV).
+
+4.  When a client connects the [WINC_AEC_ID_WPROVAT](#AN_AEC_AT_WPROV_WPROVAT) AEC is sent; the client can then send commands, and receives their responses, over the connection.
+
+5.  When the client disconnects the [WINC_AEC_ID_WPROVDT](#AN_AEC_AT_WPROV_WPROVDT) AEC is sent.
+
+[WINC_CmdWPROV](#AN_FUNC_AT_WPROV_WPROV) also stops the service.
+
+---
 ### Function Reference:
 
+<a id="AN_FUNC_AT_WPROV_WPROVC"></a>
 #### WINC_CmdWPROVC
 
 ##### Description
@@ -17957,7 +21996,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDWPROVC_ID_IGNORE_VAL.</p></td>
@@ -17965,23 +22004,30 @@ WINC_CMDWPROVC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response       | Description   |
 |----------------|---------------|
@@ -18056,9 +22102,9 @@ Positive unsigned 16-bit value<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -18090,9 +22136,9 @@ Positive unsigned 16-bit value<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -18119,6 +22165,7 @@ Positive unsigned 16-bit value<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_WPROV_WPROV"></a>
 #### WINC_CmdWPROV
 
 ##### Description
@@ -18159,9 +22206,9 @@ This function is used to control or query the provisioning service.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -18189,9 +22236,17 @@ WINC_CMDWPROV_STATE_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_WPROV_WPROVAT"></a>
 #### WINC_AEC_ID_WPROVAT
 
 ##### Description
@@ -18244,6 +22299,7 @@ WINC_CMDWPROV_STATE_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_AEC_AT_WPROV_WPROVDT"></a>
 #### WINC_AEC_ID_WPROVDT
 
 ##### Description
@@ -18325,13 +22381,20 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDDI_ID_IGNORE_VAL.</p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response       | Description   |
 |----------------|---------------|
@@ -18466,9 +22529,9 @@ with an ID range 15.0 to 15.1<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -18534,9 +22597,9 @@ sequenceDiagram
 
 ### Introduction
 
-Cryptographic operations can be delegated to an external crypto device, providing secure key storage and hardware-accelerated public key operations. The user can choose the on-module ATECC608A-TNGTLS or equivalent third-party device.
+Cryptographic operations can be delegated to an external crypto device controlled by the host application, providing secure key storage and hardware-accelerated public key operations. This can be a Microchip ATECC608 Trust&GO (TNGTLS) secure element, which is fitted on some module variants (see the module data sheet), or an equivalent third-party device.
 
-The ATECC608A-TNGTLS is the Trust-and-Go pre-provisioned variant of the ATECC608, featuring ECDSA signing, ECC Private Key secure storage, and X.509 compressed certificate storage. Access to the on-module secure element is made through a separate I2C or SWI interface.
+The ATECC608 Trust&GO is pre-provisioned, featuring ECDSA signing, ECC private key secure storage and X.509 compressed certificate storage. The host application accesses the secure element directly through its I2C or SWI interface; the WINCS02 does not communicate with it.
 
 The [WINC_AEC_ID_EXTCRYPTO](#AN_AEC_AT_EXTCRYPTO_EXTCRYPTO) AEC allows the application to receive a crypto operation request from the WINCS02. The [WINC_CmdEXTCRYPTO](#AN_FUNC_AT_EXTCRYPTO_EXTCRYPTO) function is used to send the operation result back to the WINCS02.
 
@@ -18617,9 +22680,9 @@ This function is used to provide the result of an external crypto operation.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -18652,11 +22715,18 @@ This function is used to provide the result of an external crypto operation.
 <tr>
 <td style="text-align: left;"><p>lenOptSignature</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pOptSignature.<br />
+<td style="text-align: left;"><p>Length of pOptSignature in bytes.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
 
 ---
 ### AEC Reference:
@@ -18706,9 +22776,9 @@ Positive unsigned 16-bit value<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -18734,9 +22804,9 @@ Positive unsigned 16-bit value<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -18758,9 +22828,9 @@ Positive unsigned 16-bit value<br />
 <td style="text-align: left;"><p>&lt;OP_SOURCE_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>The ID of the source requesting the operation<br />
+<td style="text-align: left;"><p>The ID of the source requesting the operation (the TLS configuration index for TLSC)<br />
 <br />
-Valid range is 1 to 2<br />
+Valid range is 1 to 4<br />
 </p></td>
 </tr>
 <tr>
@@ -18771,9 +22841,9 @@ Valid range is 1 to 2<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -18799,9 +22869,9 @@ Valid range is 1 to 2<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -18886,6 +22956,62 @@ sequenceDiagram
 ---
 ## WIFI (Module ID = 28)
 
+### Introduction
+
+The Wi-Fi module provides configuration settings for:
+
+- Wi-Fi power save
+
+- Bluetooth/Wi-Fi coexistence
+
+- Regulatory domain
+
+- Vendor-specific information elements (IEs)
+
+Configure these settings with the [WIFIC](#AN_FUNC_AT_WIFI_WIFIC) function.
+
+Vendor-specific IEs are supported in management frames in both station (STA) and SoftAP modes. The transmit and receive settings are independent.
+
+#### Transmitting vendor-specific IEs
+
+Configure transmission with [VSIE_TX_MASK](#AN_FUNC_WIFIC_STORE_ID_VSIE_TX_MASK), [VSIE_TX_DATA](#AN_FUNC_WIFIC_STORE_ID_VSIE_TX_DATA), and [VSIE_TX_DATA_COMMIT](#AN_FUNC_WIFIC_STORE_ID_VSIE_TX_DATA_COMMIT).
+
+- VSIE_TX_MASK selects the frame types in which the IEs are transmitted. The IEs are added to frames of the selected types that the WINCS02 transmits. In SoftAP mode these are beacon and probe response frames; in STA mode, probe request frames.
+
+- VSIE_TX_DATA holds up to four IE payloads. Each payload starts with a three-byte organizationally unique identifier (OUI), followed by up to 252 bytes of vendor-specific data.
+
+- VSIE_TX_DATA_COMMIT activates the staged IE payloads.
+
+Changes to VSIE_TX_DATA are applied to a staged set and have no effect until VSIE_TX_DATA_COMMIT is set. Any change to the staged set clears the commit state; the previously committed IEs remain active until the new set is committed. Reading VSIE_TX_DATA returns the active entries when VSIE_TX_DATA_COMMIT is set and the staged entries otherwise.
+
+Clearing VSIE_TX_MASK or committing an empty VSIE_TX_DATA set disables vendor-specific IE transmission.
+
+Both VSIE_TX_MASK and the IE payloads can be updated at run time.
+
+See example [configuring vendor-specific IEs for transmission](#EXAMPLE_WIFI_VSIE_TX).
+
+---
+#### Receiving vendor-specific IEs
+
+Configure reception with [VSIE_RX_MASK](#AN_FUNC_WIFIC_STORE_ID_VSIE_RX_MASK) and [VSIE_RX_OUI](#AN_FUNC_WIFIC_STORE_ID_VSIE_RX_OUI).
+
+- VSIE_RX_MASK selects the frame types from which IEs are received. Set it to `0` to stop receiving IEs.
+
+- VSIE_RX_OUI is the three-byte OUI used to filter received IEs. Matching IEs from the selected frame types are reported by the [WINC_AEC_ID_WIFIVSIERX](#AN_AEC_AT_WIFI_WIFIVSIERX) AEC.
+
+In SoftAP mode, IEs can be received from all three supported frame types: beacons, probe requests, and probe responses. In STA mode, reception additionally depends on the connection and scan state:
+
+- While connected, beacon IEs are received only from the associated AP. Beacons from other APs are ignored.
+
+- While disconnected and not scanning, all beacons are ignored.
+
+- During a passive scan, beacon IEs are received from any AP that transmits a beacon within the scan interval.
+
+- During an active scan, IEs are received in probe responses (scan responses).
+
+See example [configuring vendor-specific IE reception](#EXAMPLE_WIFI_VSIE_RX).
+
+---
 ### Function Reference:
 
 <a id="AN_FUNC_AT_WIFI_WIFIC"></a>
@@ -18930,7 +23056,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDWIFIC_ID_IGNORE_VAL.</p></td>
@@ -18938,23 +23064,30 @@ WINC_CMDWIFIC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response       | Description   |
 |----------------|---------------|
@@ -19019,9 +23152,9 @@ WINC_CMDWIFIC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -19092,7 +23225,7 @@ CH12</p></td>
 <td style="text-align: center;"><p><sup>10</sup><br />
 CH11</p></td>
 <td style="text-align: center;"><p><sup>9</sup><br />
-CH1</p></td>
+CH10</p></td>
 <td style="text-align: center;"><p><sup>8</sup><br />
 CH9</p></td>
 </tr>
@@ -19118,9 +23251,9 @@ CH1</p></td>
 </table>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -19204,7 +23337,7 @@ CH1</p></td>
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>20</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_WIFIC_STORE_ID_POWERSAVE"></span> 20</p></td>
 <td style="text-align: left;"><p>POWERSAVE</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
@@ -19212,9 +23345,9 @@ CH1</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -19238,7 +23371,7 @@ CH1</p></td>
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>21</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_WIFIC_STORE_ID_POWERSAVE_LISTEN_INTERVAL"></span> 21</p></td>
 <td style="text-align: left;"><p>POWERSAVE_LISTEN_INTERVAL</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
@@ -19258,7 +23391,7 @@ Valid range is 10 to 6000<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>30</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_WIFIC_STORE_ID_COEX_ENABLED"></span> 30</p></td>
 <td style="text-align: left;"><p>COEX_ENABLED</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
@@ -19266,9 +23399,9 @@ Valid range is 10 to 6000<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -19292,7 +23425,7 @@ Valid range is 10 to 6000<br />
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>31</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_WIFIC_STORE_ID_COEX_INTERFACE_TYPE"></span> 31</p></td>
 <td style="text-align: left;"><p>COEX_INTERFACE_TYPE</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
@@ -19300,9 +23433,9 @@ Valid range is 10 to 6000<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -19334,9 +23467,9 @@ Valid range is 10 to 6000<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -19368,9 +23501,9 @@ Valid range is 10 to 6000<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -19402,9 +23535,9 @@ Valid range is 10 to 6000<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -19436,9 +23569,9 @@ Valid range is 10 to 6000<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -19461,10 +23594,232 @@ Valid range is 10 to 6000<br />
 </tbody>
 </table></td>
 </tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WIFIC_STORE_ID_VSIE_TX_MASK"></span> 50</p></td>
+<td style="text-align: left;"><p>VSIE_TX_MASK</p></td>
+<td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
+</p></td>
+<td style="text-align: left;"><p>Frame types carrying the transmitted vendor-specific IEs, bitmask of:<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0x01</p></td>
+<td style="text-align: left;"><p>BEACON</p></td>
+<td style="text-align: left;"><p>Beacon.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x02</p></td>
+<td style="text-align: left;"><p>PROBE_REQ</p></td>
+<td style="text-align: left;"><p>Probe request.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x04</p></td>
+<td style="text-align: left;"><p>PROBE_RSP</p></td>
+<td style="text-align: left;"><p>Probe response.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WIFIC_STORE_ID_VSIE_TX_DATA"></span> 51</p></td>
+<td style="text-align: left;"><p>VSIE_TX_DATA</p></td>
+<td style="text-align: left;"><p>BYTE_ARRAY<br />
+</p></td>
+<td style="text-align: left;"><p>Vendor-specific IE data<br />
+This is a multiple value parameter<br />
+with an ID range 51.0 to 51.3<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WIFIC_STORE_ID_VSIE_TX_DATA_COMMIT"></span> 52</p></td>
+<td style="text-align: left;"><p>VSIE_TX_DATA_COMMIT</p></td>
+<td style="text-align: left;"><p>BOOL<br />
+</p></td>
+<td style="text-align: left;"><p>Commit the vendor-specific IE transmit data to the device. Modifying the transmit data clears this element, it must be set again for the new data to be transmitted<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>UNCOMMITTED</p></td>
+<td style="text-align: left;"><p>Transmit IE data has changed since it was last committed.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>COMMITTED</p></td>
+<td style="text-align: left;"><p>Transmit IE data is live.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WIFIC_STORE_ID_VSIE_RX_MASK"></span> 55</p></td>
+<td style="text-align: left;"><p>VSIE_RX_MASK</p></td>
+<td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
+</p></td>
+<td style="text-align: left;"><p>Frame types filtered for vendor-specific IE reception, bitmask of:<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0x01</p></td>
+<td style="text-align: left;"><p>BEACON</p></td>
+<td style="text-align: left;"><p>Beacon.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x02</p></td>
+<td style="text-align: left;"><p>PROBE_REQ</p></td>
+<td style="text-align: left;"><p>Probe request.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x04</p></td>
+<td style="text-align: left;"><p>PROBE_RSP</p></td>
+<td style="text-align: left;"><p>Probe response.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WIFIC_STORE_ID_VSIE_RX_OUI"></span> 56</p></td>
+<td style="text-align: left;"><p>VSIE_RX_OUI</p></td>
+<td style="text-align: left;"><p>BYTE_ARRAY<br />
+</p></td>
+<td style="text-align: left;"><p>Receive vendor-specific IE OUI filter<br />
+</p></td>
+</tr>
 </tbody>
 </table>
 
 ---
+### AEC Reference:
+
+<a id="AN_AEC_AT_WIFI_WIFIVSIERX"></a>
+#### WINC_AEC_ID_WIFIVSIERX
+
+##### Description
+
+**Received vendor-specific IE.**
+
+| AEC | Description |
+|----|----|
+| \<FRAME_TYPE\>,\<SOURCE_MAC\>,\<RSSI\>,\<DATA\> | Received vendor-specific IE |
+
+**AEC Syntax**
+
+<table>
+<caption>AEC Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;FRAME_TYPE&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Management frame type<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>BEACON</p></td>
+<td style="text-align: left;"><p>Beacon.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>2</p></td>
+<td style="text-align: left;"><p>PROBE_REQ</p></td>
+<td style="text-align: left;"><p>Probe request.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>4</p></td>
+<td style="text-align: left;"><p>PROBE_RSP</p></td>
+<td style="text-align: left;"><p>Probe response.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;SOURCE_MAC&gt;</p></td>
+<td style="text-align: left;"><p>STRING<br />
+</p></td>
+<td style="text-align: left;"><p>Source MAC address<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;RSSI&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Received signal strength in dBm<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;DATA&gt;</p></td>
+<td style="text-align: left;"><p>BYTE_ARRAY<br />
+</p></td>
+<td style="text-align: left;"><p>Vendor-specific IE data<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
 ---
 ### Examples:
 
@@ -19518,10 +23873,78 @@ sequenceDiagram
     API->>APP: Status:WINC_CMD_ID_WIFIC(OK)
 ```
 
+<a id="EXAMPLE_WIFI_VSIE_TX"></a>
+**Configure vendor-specific information elements for transmission**
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Select beacon frames for VSIE transmission
+    APP->>API: WINC_CmdWIFIC(50,0x1)
+    API->>APP: Status:WINC_CMD_ID_WIFIC(OK)
+    Note right of APP: Stage OUI 01-02-03, type 01, and data AABBCC
+    APP->>API: WINC_CmdWIFIC(51,[01020301AABBCC])
+    API->>APP: Status:WINC_CMD_ID_WIFIC(OK)
+    Note right of APP: Stage OUI 01-02-03, type 02, and data DDEEFF
+    APP->>API: WINC_CmdWIFIC(51,[01020302DDEEFF])
+    API->>APP: Status:WINC_CMD_ID_WIFIC(OK)
+    Note right of APP: Read the staged VSIE data
+    APP->>API: WINC_CmdWIFIC(51)
+    API->>APP: Response:WINC_CMD_ID_WIFIC(51.0,[01020301AABBCC])
+    API->>APP: Response:WINC_CMD_ID_WIFIC(51.1,[01020302DDEEFF])
+    API->>APP: Status:WINC_CMD_ID_WIFIC(OK)
+    Note right of APP: Commit the staged data, the entries become live
+    APP->>API: WINC_CmdWIFIC(52,1)
+    API->>APP: Status:WINC_CMD_ID_WIFIC(OK)
+    Note right of APP: Amend the data following the OUI of entry 0
+    APP->>API: WINC_CmdWIFIC(51.0,[01020301010101])
+    API->>APP: Status:WINC_CMD_ID_WIFIC(OK)
+    Note right of APP: Read the staged VSIE data
+    APP->>API: WINC_CmdWIFIC(51)
+    API->>APP: Response:WINC_CMD_ID_WIFIC(51.0,[01020301010101])
+    API->>APP: Response:WINC_CMD_ID_WIFIC(51.1,[01020302DDEEFF])
+    API->>APP: Status:WINC_CMD_ID_WIFIC(OK)
+    Note right of APP: Commit again to make the amended data live
+    APP->>API: WINC_CmdWIFIC(52,1)
+    API->>APP: Status:WINC_CMD_ID_WIFIC(OK)
+```
+
+<a id="EXAMPLE_WIFI_VSIE_RX"></a>
+**Configure vendor-specific information element reception**
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Receive from beacon frames
+    APP->>API: WINC_CmdWIFIC(55,0x1)
+    API->>APP: Status:WINC_CMD_ID_WIFIC(OK)
+    Note right of APP: Set RX OUI filter
+    APP->>API: WINC_CmdWIFIC(56,[001122])
+    API->>APP: Status:WINC_CMD_ID_WIFIC(OK)
+    API->>APP: AEC:WINC_AEC_ID_WIFIVSIERX(1,"00:11:22:33:44:55",-55,[001122AABB])
+```
+
 ---
 <a id="AN_MOD_NVM"></a>
 ## NVM (Module ID = 29)
 
+### Introduction
+
+The NVM module provides access to the alternate firmware partition, the partition which does not contain the running firmware image. All offsets are relative to the start of the partition, its size is reported by the NUM_SECTORS and SECTOR_SZ configuration values.
+
+- [WINC_CmdNVMER](#AN_FUNC_AT_NVM_NVMER) erases whole 4 KB sectors. The erase runs in the background and completes with the [WINC_AEC_ID_NVMER](#AN_AEC_AT_NVM_NVMER) AEC, or [WINC_AEC_ID_NVMERR](#AN_AEC_AT_NVM_NVMERR) on failure.
+
+- [WINC_CmdNVMWR](#AN_FUNC_AT_NVM_NVMWR) writes up to 1024 bytes and completes immediately. A write must not cross a sector boundary, and the area must have been erased first. The data is read back and verified after writing.
+
+- [WINC_CmdNVMRD](#AN_FUNC_AT_NVM_NVMRD) reads up to 1024 bytes, which are returned in the command response.
+
+- [WINC_CmdNVMCHK](#AN_FUNC_AT_NVM_NVMCHK) calculates a CRC16 or SHA digest over an area of the partition, as selected by [CHECK_MODE](#AN_FUNC_NVMC_STORE_ID_CHECK_MODE). The calculation runs in the background and the result is reported by the [WINC_AEC_ID_NVMCHK](#AN_AEC_AT_NVM_NVMCHK) AEC, or [WINC_AEC_ID_NVMERR](#AN_AEC_AT_NVM_NVMERR) on failure.
+
+Only one erase, write, read or check operation may run at a time, a new operation fails while an erase or check is in progress. After [WINC_CmdOTAINV](#AN_FUNC_AT_OTA_OTAINV) erase and write are locked until the next reset.
+
+---
 ### Function Reference:
 
 #### WINC_CmdNVMC
@@ -19565,7 +23988,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDNVMC_ID_IGNORE_VAL.</p></td>
@@ -19573,19 +23996,63 @@ WINC_CMDNVMC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response       | Description   |
+|----------------|---------------|
+| \<ID\>,\<VAL\> | Read response |
+
+**Response Format**
+
+<table>
+<caption>Response Element Description</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Any</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
 </p></td>
 </tr>
 </tbody>
@@ -19617,9 +24084,9 @@ WINC_CMDNVMC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -19662,7 +24129,7 @@ WINC_CMDNVMC_ID_IGNORE_VAL.</p></td>
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>4</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_NVMC_STORE_ID_CHECK_MODE"></span> 4</p></td>
 <td style="text-align: left;"><p>CHECK_MODE</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
@@ -19670,9 +24137,9 @@ WINC_CMDNVMC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -19719,6 +24186,7 @@ WINC_CMDNVMC_ID_IGNORE_VAL.</p></td>
 </table>
 
 ---
+<a id="AN_FUNC_AT_NVM_NVMER"></a>
 #### WINC_CmdNVMER
 
 ##### Description
@@ -19768,7 +24236,15 @@ This function allows sector erase within the alternate firmware partition.
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
+<a id="AN_FUNC_AT_NVM_NVMWR"></a>
 #### WINC_CmdNVMWR
 
 ##### Description
@@ -19826,13 +24302,21 @@ This function allows data to be written to the alternate firmware partition. Wri
 <tr>
 <td style="text-align: left;"><p>lenData</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pData.<br />
+<td style="text-align: left;"><p>Length of pData in bytes.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
+<a id="AN_FUNC_AT_NVM_NVMCHK"></a>
 #### WINC_CmdNVMCHK
 
 ##### Description
@@ -19882,7 +24366,15 @@ This function allows checking of the alternate firmware partition.
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
+<a id="AN_FUNC_AT_NVM_NVMRD"></a>
 #### WINC_CmdNVMRD
 
 ##### Description
@@ -19931,6 +24423,13 @@ This function allows reading of the alternate firmware partition.
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response                       | Description   |
 |--------------------------------|---------------|
@@ -19987,6 +24486,7 @@ Valid range is 1 to 1024<br />
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_NVM_NVMER"></a>
 #### WINC_AEC_ID_NVMER
 
 ##### Description
@@ -19995,12 +24495,12 @@ Valid range is 1 to 1024<br />
 
 | AEC         | Description       |
 |-------------|-------------------|
-|             | NVM erase success |
-| No Elements |                   |
+| No Elements | NVM erase success |
 
 AEC Syntax
 
 ---
+<a id="AN_AEC_AT_NVM_NVMCHK"></a>
 #### WINC_AEC_ID_NVMCHK
 
 ##### Description
@@ -20054,9 +24554,9 @@ Valid range is 1 to 0x000F0000<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -20111,6 +24611,7 @@ BYTE_ARRAY<br />
 </table>
 
 ---
+<a id="AN_AEC_AT_NVM_NVMERR"></a>
 #### WINC_AEC_ID_NVMERR
 
 ##### Description
@@ -20199,6 +24700,12 @@ The WINCS02 device has non-volatile memory (NVM) with two partitions which may b
 
 The partitions can be referred to as "low" and "high" based on their physical addresses. They can also be referred to as "current" and "alternate" based on their usage at a given time; in normal operation, the "current" partition contains a copy of the currently running firmware image, while the "alternate" partition may be blank or may contain a rollback image, a latent image or any other data.
 
+| Region         | Address    | Size                |
+|----------------|------------|---------------------|
+| Low partition  | 0x60000000 | 960 KB (0xF0000)    |
+| High partition | 0x600F0000 | 960 KB (0xF0000)    |
+| File system    | 0x601E0000 | Not affected by DFU |
+
 The DFU process should involve the following steps:
 
 1.  Determine the NVM partition in which to program the firmware image.
@@ -20209,7 +24716,9 @@ The DFU process should involve the following steps:
 
 4.  Erase and program the NVM partition.
 
-#### 1. Determine the NVM partition in which to program the firmware image
+5.  Reset the device.
+
+#### Determine the NVM partition in which to program the firmware image
 
 The appropriate NVM partition ("alternate", "current", "low" or "high") depends on the user’s upgrade policy. Two common upgrade policies are:
 
@@ -20217,23 +24726,34 @@ The appropriate NVM partition ("alternate", "current", "low" or "high") depends 
 
 - A "golden image" policy in which the initial firmware image is programmed to one partition (based on physical address), and subsequent firmware images are always programmed to the other partition.
 
-#### 2. Prepare the firmware image
+---
+#### Prepare the firmware image
 
-Locate the released WINCS02.bootable.dfu file for the firmware version to which you want to upgrade.
+Locate the released wincs02_dfu_high.bin file for the firmware version to which you want to upgrade.
 
-Read the firmware image from the file, then update two values:
+Read the firmware image from the file, then update two values in the image header. Both are 32-bit little endian values:
+
+| Offset | Length | Field                         |
+|--------|--------|-------------------------------|
+| 0      | 4      | Sequence Number               |
+| 20     | 4      | Firmware Image Source Address |
 
 - Sequence Number: The Sequence Number is the boot priority of the firmware image. Use the [WINC_CmdDFUSEQ](#AN_FUNC_AT_DFU_DFUSEQ) function to get the offset, length and value for updating it.
 
 - Firmware Image Source Address: The Firmware Image Source Address must match the physical address of the NVM partition in which the firmware image is to be programmed. Use the [WINC_CmdDFUADR](#AN_FUNC_AT_DFU_DFUADR) function, with the desired partition, to get the offset, length and value for updating it.
 
+Neither field is covered by the image signatures, so updating them does not invalidate the image. No other part of the image may be changed.
+
+The image with the lowest Sequence Number has the highest boot priority. The Sequence Number of a latent image is 0xFFFFFFFF; a latent image is never booted until it is activated. For an activated image, the value returned is 0x10 lower than the lowest Sequence Number of any valid image already in the NVM, so the new image boots on the next reset. The lowest four bits of the Sequence Number are used by the boot ROM and are always returned as 0.
+
 > [!NOTE]
-> A status code of [WINC_STATUS_DFU_ADDRESS_WARNING](#AN_STATUS_DFU_ADDRESS_WARNING) is a warning that the other partition does not contain a bootable firmware image. If the user proceeds in spite of this warning and step 4 does not complete for any reason, the device will reach a state in which it contains no bootable firmware images. In that situation, repeating step 4 should recover the device, so long as the user still has the firmware image available.
+> A status code of [WINC_STATUS_DFU_ADDRESS_WARNING](#AN_STATUS_DFU_ADDRESS_WARNING) is a warning that the other partition does not contain a bootable firmware image. The offset, length and value in the response are still valid and should be used. If the user proceeds in spite of this warning and step 4 does not complete for any reason, the device will reach a state in which it contains no bootable firmware images. In that situation, repeating step 4 should recover the device, so long as the user still has the firmware image available.
 
 > [!NOTE]
 > Save the value of the NVM partition address for use during step 4.
 
-#### 3. Boot the device in DFU mode
+---
+#### Boot the device in DFU mode
 
 Boot the device in DFU mode using the following steps:
 
@@ -20243,13 +24763,24 @@ Boot the device in DFU mode using the following steps:
 
 3.  Deassert WINCS02 pin NMCLR.
 
-#### 4. Erase and program the NVM partition
+In DFU mode the device runs the Programming Executive (PE), which communicates over a UART at 230400 baud, 8 data bits, no parity, 1 stop bit.
 
-Configure pins PB0 and PB1 for UART Rx and Tx respectively.
+#### Erase and program the NVM partition
 
-Use Programming Executive (PE) commands to erase the NVM partition, at the address obtained during step 2.
+Configure pins PB0 and PB1 for UART Rx and Tx respectively, from the WINCS02’s point of view: the host transmits to PB0 and receives from PB1.
+
+Use Programming Executive (PE) commands to erase the NVM partition, at the address obtained during step 2. Erase only the number of pages needed for the image.
+
+> [!WARNING]
+> Do not use the PE chip erase command. It erases both partitions and the file system.
 
 Use Programming Executive (PE) commands to program the new firmware image into the NVM partition, at the address obtained during step 2.
+
+#### Reset the device
+
+Reset the device to leave DFU mode. If the image was prepared as activated it is booted; if it was prepared as latent, the previous image continues to run.
+
+The state of the image in each partition can be read with [WINC_CmdDI](#AN_FUNC_AT_DI_DI). A latent image in the alternate partition can be activated later with [WINC_CmdOTAACT](#AN_FUNC_AT_OTA_OTAACT).
 
 ---
 ### Function Reference:
@@ -20295,9 +24826,9 @@ This function is used to get the parameters for modifying the little endian addr
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -20332,6 +24863,13 @@ This function is used to get the parameters for modifying the little endian addr
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response | Description |
 |----|----|
@@ -20420,9 +24958,9 @@ This function is used to get the parameters for modifying the little endian sequ
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -20447,6 +24985,13 @@ This function is used to get the parameters for modifying the little endian sequ
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response | Description |
 |----|----|
@@ -20514,15 +25059,15 @@ sequenceDiagram
     Note left of API: Offset 20, length 4, value 0x60000000
     API->>APP: Response:WINC_CMD_ID_DFUADR(20,4,0x60000000)
     API->>APP: Status:WINC_CMD_ID_DFUADR(ERROR:30.0,"No Bootable Image In Other Partition")
-    Note right of APP: Get parameters for making an activated image
-    APP->>API: WINC_CmdDFUSEQ(0)
-    Note left of API: Offset 0, length 4, value 0xFFEEDDC0
-    API->>APP: Response:WINC_CMD_ID_DFUSEQ(0,4,0xFFEEDDC0)
-    API->>APP: Status:WINC_CMD_ID_DFUSEQ(OK)
     Note right of APP: Get parameters for making a latent image
-    APP->>API: WINC_CmdDFUSEQ(1)
+    APP->>API: WINC_CmdDFUSEQ(0)
     Note left of API: Offset 0, length 4, value 0xFFFFFFFF
     API->>APP: Response:WINC_CMD_ID_DFUSEQ(0,4,0xFFFFFFFF)
+    API->>APP: Status:WINC_CMD_ID_DFUSEQ(OK)
+    Note right of APP: Get parameters for making an activated image
+    APP->>API: WINC_CmdDFUSEQ(1)
+    Note left of API: Offset 0, length 4, value 0xFFEEDDB0 (lower than running image 0xFFEEDDC0)
+    API->>APP: Response:WINC_CMD_ID_DFUSEQ(0,4,0xFFEEDDB0)
     API->>APP: Status:WINC_CMD_ID_DFUSEQ(OK)
 ```
 
@@ -20562,18 +25107,30 @@ Once awake, the WINCS02 will run until the next idle period, whereby it will tra
 
 When PPS is enabled and Wi-Fi is connected, the WINCS02 operates Wi-Fi Legacy Powersave to minimise power consumption while maintaining network connectivity.
 
+If Wi-Fi power save ([POWERSAVE](#AN_FUNC_WIFIC_STORE_ID_POWERSAVE)) is not already enabled, enabling PPS enables it. It remains enabled after PPS is disabled. If Wi-Fi power save cannot be enabled, enabling PPS fails with [WINC_STATUS_PPS_WIFI_PS_NOT_ENABLED](#AN_STATUS_PPS_WIFI_PS_NOT_ENABLED).
+
 ###### Listen Interval
 
-The WINCS02 wakes periodically based on the configured Wi-Fi Listen Interval, which determines how often it wakes to listen for buffered traffic from the AP. By default, this interval is 10 beacon periods, roughly equivalent to 1 second (typical beacon interval is 102.4 ms).
+The WINCS02 wakes periodically based on the configured Wi-Fi Listen Interval, which determines how often it wakes to listen for buffered traffic from the AP. By default, this interval is 10 beacon periods, roughly equivalent to 1 second (typical beacon interval is 102.4 ms). The range is 3 to 100 beacon periods.
+
+The listen interval is configured with [POWERSAVE_LISTEN_INTERVAL](#AN_FUNC_WIFIC_STORE_ID_POWERSAVE_LISTEN_INTERVAL).
+
+Traffic buffered by the AP may be delayed by up to one listen interval. A longer interval saves more power but increases this delay.
+
+Each sleep period lasts between 40 ms and 20 seconds; the WINCS02 does not sleep if the next event is less than 40 ms away.
 
 ###### DTIM (Delivery Traffic Indication Message) Awareness
 
 To efficiently receive broadcast and multicast traffic buffered by the AP, the device aims to wake on the closest DTIM period aligned with the configured listen interval. The DTIM is a special beacon that signals buffered broadcast/multicast data transmission by the AP. For example, if the Listen Interval is set to 10 beacon periods (default) and the AP’s DTIM period is 3, the WINCS02 will wake after 9 beacon periods (i.e. on the 3rd DTIM) instead of exactly after 10 beacons. This alignment maximises power savings by minimising unnecessary wake events while ensuring timely reception of important broadcast traffic.
 
+<a id="_sleep_timing_accuracy"></a>
 ##### Sleep Timing Accuracy
 
-To optimise power saving and accuracy of wake intervals, it is strongly recommended to connect and enable a secondary oscillator (SOSC) clocked at 32768 Khz. The SOSC provides a high-accuracy timing source during sleep, allowing for more precise wake-up timing when using longer sleep durations.
+To optimise power saving and accuracy of wake intervals, it is strongly recommended to connect and enable a secondary oscillator (SOSC) clocked at 32.768 kHz. The SOSC provides a high-accuracy timing source during sleep, allowing for more precise wake-up timing when using longer sleep durations. The crystal is connected to pins PB3 and PB4.
 
+The SOSC shares pin PB4 with the BT_ACT input of 3-wire Wi-Fi/BT coexistence. If [SEC_OSC_ENABLED](#AN_FUNC_PPSC_STORE_ID_SEC_OSC_ENABLED) is set while coexistence is enabled in 3-wire mode ([COEX_ENABLED](#AN_FUNC_WIFIC_STORE_ID_COEX_ENABLED) and [COEX_INTERFACE_TYPE](#AN_FUNC_WIFIC_STORE_ID_COEX_INTERFACE_TYPE)), enabling PPS fails with [WINC_STATUS_CONFIG_CONFLICT](#AN_STATUS_CONFIG_CONFLICT). Use 2-wire coexistence, or do not enable the SOSC.
+
+---
 ##### PPS Pause
 
 PPS Pause allows temporarily suspending Platform Power-Save operation without fully disabling it. This is useful during periods where continuous device responsiveness is required, such as during critical command sequences, firmware updates or other high-activity times when entering sleep state would be undesirable.
@@ -20584,9 +25141,18 @@ PPS Pause allows temporarily suspending Platform Power-Save operation without fu
 
 - Multiple pause commands can be issued sequentially, and the pause durations extend the total pause period.
 
-- After all active pause timers expire, the WINCS02 automatically sends an Automatic Event Callback (AEC) for informational purposes, to indicate that PPS will now resume.
+- After all active pause timers expire, the WINCS02 automatically sends the [WINC_AEC_ID_PPS](#AN_AEC_AT_PPS_PPS) AEC to indicate that PPS will now resume.
 
 - Once the pause period has expired, the system will return to normal PPS operation, entering low-power sleep during idle periods.
+
+##### Hardware Connections
+
+| Signal | Pin | Function |
+|----|----|----|
+| SOSC | PB3, PB4 | Optional 32.768 kHz crystal, see [Sleep Timing Accuracy](#_sleep_timing_accuracy). PB4 is also the BT_ACT input of 3-wire coexistence. |
+| MCLR | MCLR | Reset. Also wakes the WINCS02 from XDS. |
+
+No dedicated wake pins are needed; the WINCS02 is woken by a SPI transaction.
 
 ##### Wake-Up via SPI
 
@@ -20594,8 +25160,8 @@ PPS Pause allows temporarily suspending Platform Power-Save operation without fu
 
 - The host MCU simply starts a SPI transaction to wake the WINCS02.
 
-> [!NOTE]
-> - Wake-up latency from PPS mode is approximately **4 ms**.
+**
+- Wake-up latency from PPS mode is approximately **4 ms**.**
 
 ##### Command Transmission and AUTOSLEEP
 
@@ -20605,7 +25171,7 @@ PPS Pause allows temporarily suspending Platform Power-Save operation without fu
 
 - The AUTOSLEEP parameter controls how long the WINCS02 remains awake, allowing multiple transactions to be sent without re-waking each time:
 
-  - Configured with `WINC_CmdPPSC(handle,WINC_CFG_PARAM_ID_PPS_AUTO_SLEEP_TIMEOUT,WINC_TYPE_INTEGER,<ms>,0)`
+  - Configured with `WINC_CmdPPSC(handle, WINC_CFG_PARAM_ID_PPS_AUTO_SLEEP_TIMEOUT, WINC_TYPE_INTEGER_UNSIGNED, <ms>, 0)`
 
   - Extends the time WINCS02 stays awake after waking for a SPI transaction, providing the host extra time to send multiple SPI transactions.
 
@@ -20659,9 +25225,11 @@ XDS mode puts the WINCS02 into the absolute lowest power state, with all but the
 
 ##### XDS Operation details
 
-To enter XDS mode, use the following API:
+To enter XDS mode, call [WINC_CmdPPS](#AN_FUNC_AT_PPS_PPS):
 
-`WINC_CmdPPS(handle, WDRV_WINC_POWERSAVE_XDS_MODE)`
+`WINC_CmdPPS(handle, WINC_CONST_PPS_PPS_STATE_XDS)`
+
+The WINCS02 enters XDS when it is next idle after the command completes.
 
 #### Summary
 
@@ -20717,7 +25285,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDPPSC_ID_IGNORE_VAL.</p></td>
@@ -20725,19 +25293,63 @@ WINC_CMDPPSC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response       | Description   |
+|----------------|---------------|
+| \<ID\>,\<VAL\> | Read response |
+
+**Response Format**
+
+<table>
+<caption>Response Element Description</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Any</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
 </p></td>
 </tr>
 </tbody>
@@ -20769,9 +25381,9 @@ WINC_CMDPPSC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -20790,7 +25402,7 @@ WINC_CMDPPSC_ID_IGNORE_VAL.</p></td>
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_PPSC_STORE_ID_SEC_OSC_ENABLED"></span> 1</p></td>
 <td style="text-align: left;"><p>SEC_OSC_ENABLED</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
@@ -20798,9 +25410,9 @@ WINC_CMDPPSC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -20847,6 +25459,7 @@ Valid range is 0 to 86400<br />
 </table>
 
 ---
+<a id="AN_FUNC_AT_PPS_PPS"></a>
 #### WINC_CmdPPS
 
 ##### Description
@@ -20887,9 +25500,9 @@ This function allows the firmware to change the state of platform power save.
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -20919,6 +25532,13 @@ This function allows the firmware to change the state of platform power save.
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
 
 ---
 #### WINC_CmdPPSPAUSE
@@ -20963,9 +25583,17 @@ This function allows the firmware to change the state of platform power save.
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
+
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_PPS_PPS"></a>
 #### WINC_AEC_ID_PPS
 
 ##### Description
@@ -20974,7 +25602,7 @@ This function allows the firmware to change the state of platform power save.
 
 | AEC           | Description |
 |---------------|-------------|
-| \<PPS EVENT\> | PPS Event   |
+| \<PPS_EVENT\> | PPS Event   |
 
 **AEC Syntax**
 
@@ -20994,37 +25622,11 @@ This function allows the firmware to change the state of platform power save.
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>&lt;PPS EVENT&gt;</p></td>
+<td style="text-align: left;"><p>&lt;PPS_EVENT&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>Event code<br />
-</p>
-<table>
-<colgroup>
-<col style="width: 14%" />
-<col style="width: 28%" />
-<col style="width: 57%" />
-</colgroup>
-<thead>
-<tr>
-<th style="text-align: left;">Value</th>
-<th style="text-align: left;">Label</th>
-<th style="text-align: left;">Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: left;"><p>1</p></td>
-<td style="text-align: left;"><p>TIMEOUT</p></td>
-<td style="text-align: left;"><p>Timeout.</p></td>
-</tr>
-<tr>
-<td style="text-align: left;"><p>2</p></td>
-<td style="text-align: left;"><p>PAUSE_EXPIRED</p></td>
-<td style="text-align: left;"><p>Pause expired.</p></td>
-</tr>
-</tbody>
-</table></td>
+<td style="text-align: left;"><p>PPS status code<br />
+One of the PPS status codes <a href="#AN_STATUS_PPS_TIMEOUT">WINC_STATUS_PPS_TIMEOUT</a> (PPS duration expired) or <a href="#AN_STATUS_PPS_PAUSE_EXPIRED">WINC_STATUS_PPS_PAUSE_EXPIRED</a> (PPS pause ended), see <a href="#_status_response_codes">Status Response Codes</a>.</p></td>
 </tr>
 </tbody>
 </table>
@@ -21063,8 +25665,18 @@ sequenceDiagram
 ```
 
 ---
+<a id="AN_MOD_SYSLOG"></a>
 ## SYSLOG (Module ID = 32)
 
+### Introduction
+
+When enabled with [ENABLED](#AN_FUNC_SYSLOGC_STORE_ID_ENABLED), the SYSLOG module reports internal log events as [WINC_AEC_ID_SYSLOG](#AN_AEC_AT_SYSLOG_SYSLOG) AECs.
+
+Each event carries a timestamp in milliseconds, the ID of the module which raised it, a severity and a message of up to 127 characters. All events are reported, there is no filtering by module or severity.
+
+Logging is disabled by default and the setting is not stored in the configuration archive. Currently only the TLS module reports events.
+
+---
 ### Function Reference:
 
 <a id="AN_FUNC_AT_SYSLOG_SYSLOGC"></a>
@@ -21109,7 +25721,7 @@ This function is a configuration function which supports setting and getting par
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDSYSLOGC_ID_IGNORE_VAL.</p></td>
@@ -21117,19 +25729,63 @@ WINC_CMDSYSLOGC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response       | Description   |
+|----------------|---------------|
+| \<ID\>,\<VAL\> | Read response |
+
+**Response Format**
+
+<table>
+<caption>Response Element Description</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Any</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
 </p></td>
 </tr>
 </tbody>
@@ -21161,9 +25817,9 @@ WINC_CMDSYSLOGC_ID_IGNORE_VAL.</p></td>
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -21182,17 +25838,17 @@ WINC_CMDSYSLOGC_ID_IGNORE_VAL.</p></td>
 </table></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_SYSLOGC_STORE_ID_ENABLED"></span> 1</p></td>
 <td style="text-align: left;"><p>ENABLED</p></td>
 <td style="text-align: left;"><p>BOOL<br />
 </p></td>
-<td style="text-align: left;"><p>DCE’s SYSLOG<br />
+<td style="text-align: left;"><p>device’s SYSLOG<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -21221,6 +25877,7 @@ WINC_CMDSYSLOGC_ID_IGNORE_VAL.</p></td>
 ---
 ### AEC Reference:
 
+<a id="AN_AEC_AT_SYSLOG_SYSLOG"></a>
 #### WINC_AEC_ID_SYSLOG
 
 ##### Description
@@ -21251,20 +25908,20 @@ WINC_CMDSYSLOGC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>&lt;TIMESTAMP&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
-STRING<br />
-BYTE_ARRAY<br />
 </p></td>
-<td style="text-align: left;"><p>Log timestamp<br />
+<td style="text-align: left;"><p>System time in milliseconds when the message was logged<br />
+<br />
+Unsigned 32-bit value<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>&lt;MODULE_ID&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
-STRING<br />
-BYTE_ARRAY<br />
 </p></td>
-<td style="text-align: left;"><p>Module ID<br />
-</p></td>
+<td style="text-align: left;"><p>ID of the module that logged the message<br />
+<br />
+Unsigned 8-bit value<br />
+Module IDs are listed in the headings of the <a href="#_status_response_codes">Status Response Codes</a> tables.</p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>&lt;EVENT_SEVERITY&gt;</p></td>
@@ -21274,9 +25931,9 @@ BYTE_ARRAY<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -21345,7 +26002,7 @@ BYTE_ARRAY<br />
 
 ### Introduction
 
-The WINCS02 device has an anti-rollback counter (ARB) which can be used to prevent vulnerable firmware from running on the device.
+The WINCS02 has an anti-rollback counter (ARB) which can be used to prevent vulnerable firmware from running on the device.
 
 The value in the ARB is between 0 and 127 and can be increased but never decreased. If a firmware image has a security level which is lower than the value in the ARB, then that image will not boot.
 
@@ -21366,7 +26023,7 @@ To increase the value in the device’s ARB, use the [WINC_CmdARB](#AN_FUNC_AT_A
 
 ##### Description
 
-This function is used to get or increase the WINC’s ARB value, and to get the current firmware’s security level.
+This function is used to get or increase the device’s ARB value, and to get the current firmware’s security level.
 
     bool WINC_CmdARB
     (
@@ -21398,7 +26055,7 @@ This function is used to get or increase the WINC’s ARB value, and to get the 
 <tr>
 <td style="text-align: left;"><p>optValue</p></td>
 <td style="text-align: left;"><p>uint8_t</p></td>
-<td style="text-align: left;"><p>The value to which to increase the DCE’s ARB.<br />
+<td style="text-align: left;"><p>The value to which to increase the device’s ARB.<br />
 </p>
 <p>optValue will be ignored if its value is<br />
 WINC_CMDARB_VALUE_IGNORE_VAL.</p></td>
@@ -21406,9 +26063,16 @@ WINC_CMDARB_VALUE_IGNORE_VAL.</p></td>
 </tbody>
 </table>
 
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
 | Response | Description |
 |----|----|
-| \<VALUE\>,\<FW_SECURITY\> | The DCE’s ARB value and the current firmware’s security level |
+| \<VALUE\>,\<FW_SECURITY\> | The device’s ARB value and the current firmware’s security level |
 
 **Response Format**
 
@@ -21431,7 +26095,7 @@ WINC_CMDARB_VALUE_IGNORE_VAL.</p></td>
 <td style="text-align: left;"><p>&lt;VALUE&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>DCE’s ARB value<br />
+<td style="text-align: left;"><p>device’s ARB value<br />
 </p></td>
 </tr>
 <tr>
@@ -21455,24 +26119,24 @@ WINC_CMDARB_VALUE_IGNORE_VAL.</p></td>
 sequenceDiagram
     participant APP as App
     participant API as API
-    Note right of APP: Get the DCE's ARB value and the current firmware's security level
+    Note right of APP: Get the device's ARB value and the current firmware's security level
     APP->>API: WINC_CmdARB()
-    Note left of API: DCE's ARB value is 0; current firmware's security level is 1
+    Note left of API: device's ARB value is 0; current firmware's security level is 1
     API->>APP: Response:WINC_CMD_ID_ARB(0,1)
     API->>APP: Status:WINC_CMD_ID_ARB(OK)
-    Note right of APP: Increase the DCE's ARB value to 1
+    Note right of APP: Increase the device's ARB value to 1
     APP->>API: WINC_CmdARB(1)
-    Note left of API: DCE's ARB value is 1; current firmware's security level is 1
+    Note left of API: device's ARB value is 1; current firmware's security level is 1
     API->>APP: Response:WINC_CMD_ID_ARB(1,1)
     API->>APP: Status:WINC_CMD_ID_ARB(OK)
-    Note right of APP: Increase the DCE's ARB value to 1
+    Note right of APP: Increase the device's ARB value to 1
     APP->>API: WINC_CmdARB(1)
-    Note left of API: DCE's ARB value is 1; current firmware's security level is 1
+    Note left of API: device's ARB value is 1; current firmware's security level is 1
     API->>APP: Response:WINC_CMD_ID_ARB(1,1)
     API->>APP: Status:WINC_CMD_ID_ARB(ERROR:33.0,"The Value Provided Would Not Increase The ARB")
-    Note right of APP: Increase the DCE's ARB value to 2
+    Note right of APP: Increase the device's ARB value to 2
     APP->>API: WINC_CmdARB(2)
-    Note left of API: DCE's ARB value is 1; current firmware's security level is 1
+    Note left of API: device's ARB value is 1; current firmware's security level is 1
     API->>APP: Response:WINC_CMD_ID_ARB(1,1)
     API->>APP: Status:WINC_CMD_ID_ARB(ERROR:33.1,"The Value Provided Would Invalidate The Current Image")
 ```
@@ -21590,6 +26254,14 @@ See example [File download to local filesystem](#EXAMPLE_HTTP_3).
 
 The HTTP client can utilize an existing TCP socket connection instead of creating its own. This is useful when you need more control over the connection setup, such as pre-configuring socket options or managing connection pooling.
 
+- Create and connect a TCP socket using socket functions ([WINC_CmdSOCKO](#AN_FUNC_AT_SOCKET_SOCKO), [WINC_CmdSOCKBR](#AN_FUNC_AT_SOCKET_SOCKBR)).
+
+- Optionally upgrade the socket to TLS using [WINC_CmdSOCKTLS](#AN_FUNC_AT_SOCKET_SOCKTLS).
+
+- Assign the socket ID to the HTTP configuration using [WINC_CmdHTTPC](#AN_FUNC_AT_HTTP_HTTPC) ID 10 (SOCKET_ID parameter).
+
+- Perform HTTP GET operations as normal using [WINC_CmdHTTPGET](#AN_FUNC_AT_HTTP_HTTPGET).
+
 > [!NOTE]
 > When using an existing socket, do not configure the HOST (ID 2) or PORT (ID 3) parameters in the HTTP configuration.
 
@@ -21606,6 +26278,29 @@ See example [HTTP basic authentication using additional request headers](#EXAMPL
 ##### Reading Configuration Values
 
 The read-only configuration parameter **CONTENT_LENGTH** reports the Content-Length value from the HTTP response headers after they are received.
+
+---
+#### Error Handling
+
+The HTTP client reports errors via two mechanisms:
+
+- **HTTP status codes** - The server’s response status is reported via [WINC_AEC_ID_HTTPRSPCODE](#AN_AEC_AT_HTTP_HTTPRSPCODE). Non-2xx status codes (e.g., 401 Unauthorized, 404 Not Found, 500 Internal Server Error) indicate the server rejected the request.
+
+- **Transport errors** - Connection-level errors are reported via [WINC_AEC_ID_HTTPERR](#AN_AEC_AT_HTTP_HTTPERR). These indicate failures before or during HTTP communication.
+
+Common transport errors:
+
+- **DNS Failed** - The server hostname could not be resolved
+
+- **TLS Failed** - TLS handshake failed (wrong CA certificate, SNI mismatch, expired certificate)
+
+- **Connect Failed** - TCP connection to server failed
+
+- **Timeout** - No response received within the configured timeout period
+
+- **Receive Failed** - Error receiving data from server
+
+- **Send Failed** - Error sending request to server
 
 ---
 ### Function Reference:
@@ -21661,7 +26356,7 @@ WINC_CMDHTTPC_CONF_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>optId</p></td>
 <td style="text-align: left;"><p>int32_t</p></td>
-<td style="text-align: left;"><p>Parameter ID number.<br />
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
 </p>
 <p>optId will be ignored if its value is<br />
 WINC_CMDHTTPC_ID_IGNORE_VAL.</p></td>
@@ -21669,28 +26364,35 @@ WINC_CMDHTTPC_ID_IGNORE_VAL.</p></td>
 <tr>
 <td style="text-align: left;"><p>typeOptVal</p></td>
 <td style="text-align: left;"><p>WINC_TYPE</p></td>
-<td style="text-align: left;"><p>Type of optVal.<br />
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>optVal</p></td>
 <td style="text-align: left;"><p>uintptr_t</p></td>
-<td style="text-align: left;"><p>Parameter value.<br />
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
 </p></td>
 </tr>
 <tr>
 <td style="text-align: left;"><p>lenOptVal</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of optVal.<br />
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
 
-| Response          | Description   |
-|-------------------|---------------|
-| \<CONF\>,\<CONF\> | List response |
-| \<ID\>,\<VAL\>    | Read response |
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response                | Description       |
+|-------------------------|-------------------|
+| \<MIN_IDX\>,\<MAX_IDX\> | Valid index range |
+| \<ID\>,\<VAL\>          | Read response     |
 
 **Response Format**
 
@@ -21710,12 +26412,17 @@ WINC_CMDHTTPC_ID_IGNORE_VAL.</p></td>
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><p>&lt;CONF&gt;</p></td>
+<td style="text-align: left;"><p>&lt;MIN_IDX&gt;</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>HTTP Configuration number<br />
-<br />
-Value is 1<br />
+<td style="text-align: left;"><p>Lowest valid index<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;MAX_IDX&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Highest valid index<br />
 </p></td>
 </tr>
 <tr>
@@ -21760,9 +26467,9 @@ Value is 1<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -21800,7 +26507,7 @@ A1|…​|A16 = A1A2::A15A16<br />
 <td style="text-align: left;"><p>PORT</p></td>
 <td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
 </p></td>
-<td style="text-align: left;"><p>Listening port<br />
+<td style="text-align: left;"><p>Server port (e.g. 80 for HTTP, 443 for HTTPS); must be set<br />
 </p></td>
 </tr>
 <tr>
@@ -21832,11 +26539,11 @@ Positive unsigned 8-bit value<br />
 </p></td>
 </tr>
 <tr>
-<td style="text-align: left;"><p>7</p></td>
+<td style="text-align: left;"><p><span id="AN_FUNC_HTTPC_STORE_ID_TLS_CONF"></span> 7</p></td>
 <td style="text-align: left;"><p>TLS_CONF</p></td>
 <td style="text-align: left;"><p>INTEGER<br />
 </p></td>
-<td style="text-align: left;"><p>TLS configuration index (see +TLSC)<br />
+<td style="text-align: left;"><p>TLS configuration index (see WINC_CmdTLSCDA). 0 disables TLS<br />
 <br />
 Valid range is 0 to 4<br />
 </p></td>
@@ -21876,9 +26583,9 @@ Maximum length of string is 32<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -21925,9 +26632,9 @@ Maximum length of string is 32<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -22058,11 +26765,18 @@ This function performs an HTTP GET operation.
 <tr>
 <td style="text-align: left;"><p>lenOptPath</p></td>
 <td style="text-align: left;"><p>size_t</p></td>
-<td style="text-align: left;"><p>Length of pOptPath.<br />
+<td style="text-align: left;"><p>Length of pOptPath in bytes, strings are not NUL terminated so the length must not include a terminator.<br />
 </p></td>
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
 
 ---
 <a id="AN_FUNC_AT_HTTP_HTTPRD"></a>
@@ -22114,6 +26828,13 @@ This function performs an HTTP data read operation.
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
 
 | Response                                       | Description         |
 |------------------------------------------------|---------------------|
@@ -22212,6 +26933,13 @@ This function performs an HTTP close operation.
 </tr>
 </tbody>
 </table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+Return Values
 
 ---
 ### AEC Reference:
@@ -22452,9 +27180,9 @@ Value is 1<br />
 </p>
 <table>
 <colgroup>
-<col style="width: 14%" />
+<col style="width: 21%" />
 <col style="width: 28%" />
-<col style="width: 57%" />
+<col style="width: 50%" />
 </colgroup>
 <thead>
 <tr>
@@ -22543,6 +27271,7 @@ Value is 1<br />
 </table>
 
 ---
+<a id="AN_AEC_AT_HTTP_HTTPERR"></a>
 #### WINC_AEC_ID_HTTPERR
 
 ##### Description
@@ -22606,7 +27335,7 @@ sequenceDiagram
     APP->>API: WINC_CmdTLSC(1,1,"ServerCACert")
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
     Note right of APP: Set the server domain
-    APP->>API: WINC_CmdTLSC(1,6,"example.com")
+    APP->>API: WINC_CmdTLSC(1,6,"www.example.com")
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
     Note right of APP: Set the server hostname
     APP->>API: WINC_CmdHTTPC(1,2,"www.example.com")
@@ -22668,7 +27397,7 @@ sequenceDiagram
     APP->>API: WINC_CmdTLSC(1,1,"ServerCACert")
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
     Note right of APP: Set the server domain
-    APP->>API: WINC_CmdTLSC(1,6,"example.com")
+    APP->>API: WINC_CmdTLSC(1,6,"www.example.com")
     API->>APP: Status:WINC_CMD_ID_TLSC(OK)
     Note right of APP: Set the file path
     APP->>API: WINC_CmdHTTPC(1,5,"/examplefile.bin")
@@ -22778,6 +27507,1194 @@ sequenceDiagram
 ```
 
 ---
+<a id="AN_MOD_WBCN"></a>
+## WBCN (Module ID = 35)
+
+### Introduction
+
+The [WBCN](#AN_MOD_WBCN) module transmits Wi-Fi beacon frames. Together with periodic passive scanning, it supports application-defined beacon advertising and discovery.
+
+Information is carried in the **beacon SSID**: the payload is an application-defined string of at most 32 characters. The format of the payload is left to the application. A common leading string allows the SSID prefix filter of the [WSCN](#AN_MOD_WSCN) module to select matching beacons from those of ordinary access points.
+
+Additional application information can be carried alongside the SSID in one or more vendor-specific IEs. Each IE contains up to 252 bytes of vendor-specific data.
+
+Configure vendor-specific IEs with the [WIFIC](#AN_FUNC_AT_WIFI_WIFIC) function.
+
+Beacons are transmitted with the [WINC_CmdWBCN](#AN_FUNC_AT_WBCN_WBCN) function described below; beacons from other devices are detected using the [WINC_CmdWSCNP](#AN_FUNC_AT_WSCN_WSCNP) function.
+
+#### Configuring the beacon
+
+Set the beacon parameters using the [WINC_CmdWBCNC](#AN_FUNC_AT_WBCN_WBCNC) function.
+
+Five parameters control the beacon. Three of them decide what is transmitted:
+
+- The channel to transmit the beacon on: [CHANNEL](#AN_FUNC_WBCNC_STORE_ID_CHANNEL). A non-zero channel selects that one channel; zero takes the channel set from [CHANMASK24](#AN_FUNC_WBCNC_STORE_ID_CHANMASK24).
+
+- The 2.4 GHz channel bit mask used when CHANNEL is zero: [CHANMASK24](#AN_FUNC_WBCNC_STORE_ID_CHANMASK24)
+
+- The SSID carried in the beacon, which holds the payload: [SSID](#AN_FUNC_WBCNC_STORE_ID_SSID)
+
+The other two decide how often the beacon is repeated, and how many times:
+
+- The time between beacons, in milliseconds: [INTERVAL](#AN_FUNC_WBCNC_STORE_ID_INTERVAL)
+
+- The number of beacons to transmit, or zero to beacon until stopped: [NUM_BEACONS](#AN_FUNC_WBCNC_STORE_ID_NUM_BEACONS)
+
+> [!NOTE]
+> The selected channel or channel mask must lie within the active regulatory domain’s channel mask, otherwise the value is rejected. CHANNEL zero with an empty CHANMASK24 is refused when beaconing starts with [WINC_STATUS_WBCN_NO_CHANNELS](#AN_STATUS_WBCN_NO_CHANNELS). INTERVAL can be configured from 100 ms to 600000 ms. When beaconing starts, INTERVAL must be strictly greater than 20 ms multiplied by the number of selected channels; otherwise the start is refused with [WINC_STATUS_WBCN_INTERVAL_TOO_SHORT](#AN_STATUS_WBCN_INTERVAL_TOO_SHORT).
+>
+> The SSID may be at most 32 characters. A payload longer than that is rejected.
+
+---
+#### Transmitting beacons
+
+Once the beacon has been configured, start beaconing using the [WINC_CmdWBCN](#AN_FUNC_AT_WBCN_WBCN) function, and stop it with the same function.
+
+Beaconing takes the form of a run rather than a single transmission: the configured beacon is transmitted on the configured channel set once every INTERVAL milliseconds, until NUM_BEACONS transmissions have completed, or indefinitely if NUM_BEACONS is zero. One transmission covers every selected channel, so NUM_SENT counts channel sets, not individual beacon frames.
+
+A run which cannot continue ends with [WINC_AEC_ID_WBCNERR](#AN_AEC_AT_WBCN_WBCNERR).
+
+A run always ends with one of two AECs:
+
+- [WINC_AEC_ID_WBCNDONE](#AN_AEC_AT_WBCN_WBCNDONE) - the run ended as asked, either because NUM_BEACONS channel-set transmissions completed, or because it was stopped.
+
+- [WINC_AEC_ID_WBCNERR](#AN_AEC_AT_WBCN_WBCNERR) - the run was abandoned before completion.
+
+Stopping a run is a request rather than an immediate halt: success is returned straight away, the run ends at the next point at which nothing is outstanding, and [WINC_AEC_ID_WBCNDONE](#AN_AEC_AT_WBCN_WBCNDONE) follows. Stopping when no run is in progress succeeds and does nothing.
+
+The beacon configuration is locked while a run is in progress: a write with [WINC_CmdWBCNC](#AN_FUNC_AT_WBCN_WBCNC) is rejected with [WINC_STATUS_STORE_UPDATE_BLOCKED](#AN_STATUS_STORE_UPDATE_BLOCKED), and a second attempt to start a run with [WINC_STATUS_WBCN_IN_PROGRESS](#AN_STATUS_WBCN_IN_PROGRESS). Reads are permitted throughout. Changing the payload therefore means ending the current run first: stop it, wait for [WINC_AEC_ID_WBCNDONE](#AN_AEC_AT_WBCN_WBCNDONE), write the new [SSID](#AN_FUNC_WBCNC_STORE_ID_SSID), then start a new run. The module goes idle before that AEC is sent, so the configuration is always writable by the time the host sees it.
+
+Beaconing can overlap periodic passive scanning with [WINC_CmdWSCNP](#AN_FUNC_AT_WSCN_WSCNP), which allows a device to transmit and scan at the same time.
+
+> [!NOTE]
+> When beaconing and periodic passive scanning overlap, scanning takes precedence. Beaconing resumes after the scan sweep completes.
+
+> [!NOTE]
+> Beaconing is unavailable while soft-AP mode is running; a start is refused with [WINC_STATUS_WBCN_AP_MODE_ACTIVE](#AN_STATUS_WBCN_AP_MODE_ACTIVE).
+
+#### Detecting beacons
+
+Beacons transmitted by other devices are detected using periodic passive scanning.
+
+Set the periodic scan channel ([CHANNEL](#AN_FUNC_WSCNPC_STORE_ID_CHANNEL)) to match the beacon channel, optionally adjust the passive scan slot time ([PASV_SLOT_TIME](#AN_FUNC_WSCNPC_STORE_ID_PASV_SLOT_TIME)) and interval ([INTERVAL](#AN_FUNC_WSCNPC_STORE_ID_INTERVAL)), then start periodic passive scanning using the [WINC_CmdWSCNP](#AN_FUNC_AT_WSCN_WSCNP) function.
+
+---
+#### Examples
+
+##### Asset Tracking
+
+Asset tracking is one application of beacon advertising and periodic passive scanning. A target asset advertises its identifier and listens for commands; a tracker asset detects target assets and delivers commands. The examples below show the exchange one stage at a time.
+
+---
+A target asset advertises its location by beaconing its asset identifier:
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Take the beacon channels from the channel mask
+    APP->>API: WINC_CmdWBCNC(1,0)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Beacon on channels 1, 6 and 11
+    APP->>API: WINC_CmdWBCNC(11,0x0421)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Set the beacon SSID to the asset identifier
+    APP->>API: WINC_CmdWBCNC(2,"ASSET35")
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Send one three-channel transmission every 5 s
+    APP->>API: WINC_CmdWBCNC(7,5000)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Keep advertising until told to stop, rather than stopping after a set count
+    APP->>API: WINC_CmdWBCNC(8,0)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Start beaconing
+    APP->>API: WINC_CmdWBCN(1)
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note right of APP: Request that beaconing stops
+    APP->>API: WINC_CmdWBCN(0)
+    Note left of API: The request is accepted; the run is not over yet
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note left of API: The run is over: 37 beacons transmitted per channel
+    API->>APP: AEC:WINC_AEC_ID_WBCNDONE(37)
+```
+
+---
+A tracker asset runs a periodic passive scan and detects the target asset:
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Set the periodic scan channel to 6
+    APP->>API: WINC_CmdWSCNPC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Listen for 500 ms in each scan slot
+    APP->>API: WINC_CmdWSCNPC(3,500)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms
+    APP->>API: WINC_CmdWSCNPC(4,2)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Start a sweep every 5000 ms
+    APP->>API: WINC_CmdWSCNPC(12,5000)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Discard anything weaker than -45 dBm
+    APP->>API: WINC_CmdWSCNPC(6,-45)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Report only matching SSIDs, so beacons from ordinary access points are dropped
+    APP->>API: WINC_CmdWSCNPC(10,"ASSET*")
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Enable periodic scanning, the first sweep starts immediately. All of the scan configuration must be in place by now: it is locked while scanning is enabled
+    APP->>API: WINC_CmdWSCNP(1)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: A matching beacon is detected on channel 6
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-30,0,6,"F8:F0:05:12:34:56","ASSET35")
+    Note left of API: Sweep completed, 1 result found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(1)
+    Note left of API: A later sweep found no matching beacons
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(0)
+    Note right of APP: Stop periodic scanning
+    APP->>API: WINC_CmdWSCNP(0)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: The run is over: 12 sweeps were carried out
+    API->>APP: AEC:WINC_AEC_ID_WSCNPDONE(12)
+```
+
+---
+A tracker asset delivers an encoded command to a target asset by beaconing the command payload:
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Set the beacon channel to 6
+    APP->>API: WINC_CmdWBCNC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Set the beacon SSID to the encrypted command payload
+    APP->>API: WINC_CmdWBCNC(2,"CMD3240138012398502495190247597")
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Repeat the command every 1000 ms
+    APP->>API: WINC_CmdWBCNC(7,1000)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Repeat until told to stop, rather than a set number of times: the target only listens for part of each of its scan intervals, so a single transmission is easily missed
+    APP->>API: WINC_CmdWBCNC(8,0)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Start transmitting the beacons carrying the command
+    APP->>API: WINC_CmdWBCN(1)
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note right of APP: Stop repeating the command, the target's response having been received
+    APP->>API: WINC_CmdWBCN(0)
+    Note left of API: The request is accepted; the run is not over yet
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note left of API: The run is over: 12 beacons transmitted
+    API->>APP: AEC:WINC_AEC_ID_WBCNDONE(12)
+```
+
+---
+The target asset runs a periodic passive scan and receives the command:
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Set the periodic scan channel to 6
+    APP->>API: WINC_CmdWSCNPC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Listen for 500 ms in each scan slot
+    APP->>API: WINC_CmdWSCNPC(3,500)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms
+    APP->>API: WINC_CmdWSCNPC(4,2)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Start a sweep every 5000 ms
+    APP->>API: WINC_CmdWSCNPC(12,5000)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Discard anything weaker than -45 dBm
+    APP->>API: WINC_CmdWSCNPC(6,-45)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Report only SSIDs carrying command payloads
+    APP->>API: WINC_CmdWSCNPC(10,"CMD*")
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Enable periodic scanning, the first sweep starts immediately. All of the scan configuration must be in place by now: it is locked while scanning is enabled
+    APP->>API: WINC_CmdWSCNP(1)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: A sweep which found no matching beacon
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(0)
+    Note left of API: Matching SSID payload received
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-30,0,6,"F8:F0:05:AB:CD:EF","CMD3240138012398502495190247597")
+    Note left of API: Sweep completed, 1 result found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(1)
+    Note right of APP: Stop periodic scanning
+    APP->>API: WINC_CmdWSCNP(0)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: The run is over: 8 sweeps were carried out
+    API->>APP: AEC:WINC_AEC_ID_WSCNPDONE(8)
+```
+
+The two examples below then show each role’s complete exchange, from the two sides of the same conversation.
+
+---
+The target asset advertises and listens at the same time, answers a command, and resumes advertising:
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Set the beacon channel to 6
+    APP->>API: WINC_CmdWBCNC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Set the beacon SSID to the asset identifier
+    APP->>API: WINC_CmdWBCNC(2,"ASSET35")
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Advertise once every 1000 ms
+    APP->>API: WINC_CmdWBCNC(7,1000)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Keep advertising until told to stop, rather than stopping after a set count
+    APP->>API: WINC_CmdWBCNC(8,0)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Listen for commands on the beacon channel
+    APP->>API: WINC_CmdWSCNPC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Listen for 500 ms in each scan slot
+    APP->>API: WINC_CmdWSCNPC(3,500)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms
+    APP->>API: WINC_CmdWSCNPC(4,2)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Start a sweep every 5000 ms
+    APP->>API: WINC_CmdWSCNPC(12,5000)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Discard anything weaker than -45 dBm: a tracker asset that distant could not hear the response either
+    APP->>API: WINC_CmdWSCNPC(6,-45)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Report only command payloads, so beacons carrying anything else are dropped
+    APP->>API: WINC_CmdWSCNPC(10,"CMD*")
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Start advertising. No connection is needed: the whole exchange runs in the disconnected state
+    APP->>API: WINC_CmdWBCN(1)
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note right of APP: Start listening for commands, the first sweep starts immediately
+    APP->>API: WINC_CmdWSCNP(1)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: A sweep which overlapped no command beacon
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(0)
+    Note left of API: A command has arrived from the tracker asset
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-30,0,6,"F8:F0:05:AB:CD:EF","CMD3240138012398502495190247597")
+    Note left of API: Sweep completed, 1 result found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(1)
+    Note right of APP: Stop advertising: the beacon configuration is locked while a run is in progress, so the response cannot be loaded until the advertising run has ended
+    APP->>API: WINC_CmdWBCN(0)
+    Note left of API: The request is accepted; the run is not over yet
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note left of API: The advertising run is over: all 75 beacons were confirmed transmitted, some delayed while a scan sweep held the radio
+    API->>APP: AEC:WINC_AEC_ID_WBCNDONE(75)
+    Note right of APP: Set the beacon SSID to the encoded response payload
+    APP->>API: WINC_CmdWBCNC(2,"RSP7620045118820394471029384756")
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Send the response 10 times: the tracker only listens for part of each of its scan intervals, so a single transmission is easily missed
+    APP->>API: WINC_CmdWBCNC(8,10)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Transmit the beacons carrying the response
+    APP->>API: WINC_CmdWBCN(1)
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note left of API: The response run is over: all 10 beacons were transmitted
+    API->>APP: AEC:WINC_AEC_ID_WBCNDONE(10)
+    Note right of APP: Restore the asset identifier
+    APP->>API: WINC_CmdWBCNC(2,"ASSET35")
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Advertise continuously again
+    APP->>API: WINC_CmdWBCNC(8,0)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Resume advertising, the periodic scan having listened for the next command throughout
+    APP->>API: WINC_CmdWBCN(1)
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+```
+
+---
+The tracker asset connects, discovers the target asset, commands it and collects the response:
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Specify SSID of the Access Point to report findings over
+    APP->>API: WINC_CmdWSTAC(1,"MyAP")
+    API->>APP: Status:WINC_CMD_ID_WSTAC(OK)
+    Note right of APP: Set security type to WPA2-Personal
+    APP->>API: WINC_CmdWSTAC(2,3)
+    API->>APP: Status:WINC_CMD_ID_WSTAC(OK)
+    Note right of APP: Set WPA2 Personal passphrase for connecting to the Access Point
+    APP->>API: WINC_CmdWSTAC(3,"MyAPPSK")
+    API->>APP: Status:WINC_CMD_ID_WSTAC(OK)
+    Note right of APP: Connect
+    APP->>API: WINC_CmdWSTA(1)
+    API->>APP: Status:WINC_CMD_ID_WSTA(OK)
+    Note left of API: Link up: connected on channel 6 to an AP with BSSID 00:01:02:03:04:05
+    API->>APP: AEC:WINC_AEC_ID_WSTALU(1,"00:01:02:03:04:05",6)
+    Note left of API: IP address received via auto configuration (DHCP/SLAAC)
+    API->>APP: AEC:WINC_AEC_ID_WSTAAIP(1,"192.168.0.20")
+    Note right of APP: Set the periodic scan channel to 6
+    APP->>API: WINC_CmdWSCNPC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Listen for 500 ms in each scan slot
+    APP->>API: WINC_CmdWSCNPC(3,500)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms
+    APP->>API: WINC_CmdWSCNPC(4,2)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Start a sweep every 5000 ms
+    APP->>API: WINC_CmdWSCNPC(12,5000)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Discard anything weaker than -45 dBm: a target asset that distant could not hear a command either
+    APP->>API: WINC_CmdWSCNPC(6,-45)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Add a filter for the advertisements of target assets
+    APP->>API: WINC_CmdWSCNPC(10,"ASSET*")
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Add a second filter for the responses they send back. Both filters must be in place before scanning starts, because the scan configuration is locked while it runs
+    APP->>API: WINC_CmdWSCNPC(10,"RSP*")
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Enable periodic scanning, the first sweep starts immediately
+    APP->>API: WINC_CmdWSCNP(1)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: A sweep which found no target asset
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(0)
+    Note left of API: Target asset ASSET35 is in range
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-30,0,6,"F8:F0:05:12:34:56","ASSET35")
+    Note left of API: Sweep completed, 1 result found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(1)
+    Note right of APP: Set the beacon channel to 6, the channel the target asset listens on
+    APP->>API: WINC_CmdWBCNC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Set the beacon SSID to the encrypted command payload
+    APP->>API: WINC_CmdWBCNC(2,"CMD3240138012398502495190247597")
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Repeat the command every 1000 ms
+    APP->>API: WINC_CmdWBCNC(7,1000)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Repeat until told to stop, rather than a set number of times: the target only listens for part of each of its scan intervals, so a single transmission is easily missed
+    APP->>API: WINC_CmdWBCNC(8,0)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Start transmitting the command. Beaconing and periodic scanning run together: a beacon which comes due while a sweep holds the radio waits and is sent once the sweep ends
+    APP->>API: WINC_CmdWBCN(1)
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note left of API: A sweep which saw the advertisement again, but no response yet
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-30,0,6,"F8:F0:05:12:34:56","ASSET35")
+    Note left of API: Sweep completed, 1 result found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(1)
+    Note left of API: The target asset has answered; it stops advertising its identifier while it sends the response
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-30,0,6,"F8:F0:05:12:34:56","RSP7620045118820394471029384756")
+    Note left of API: Sweep completed, 1 result found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(1)
+    Note right of APP: The response has been received, so stop repeating the command
+    APP->>API: WINC_CmdWBCN(0)
+    Note left of API: The request is accepted; the run is not over yet
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note left of API: The run is over: all 15 beacons carrying the command were confirmed transmitted, some delayed while one of this asset's own scan sweeps held the radio
+    API->>APP: AEC:WINC_AEC_ID_WBCNDONE(15)
+    Note right of APP: Stop watching for target assets
+    APP->>API: WINC_CmdWSCNP(0)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: The run is over: 19 sweeps were started and none were skipped
+    API->>APP: AEC:WINC_AEC_ID_WSCNPDONE(19,0)
+```
+
+### Function Reference:
+
+<a id="AN_FUNC_AT_WBCN_WBCNC"></a>
+#### WINC_CmdWBCNC
+
+##### Description
+
+This function is used to modify or query the behavior of the beacon function.
+
+This function is a configuration function which supports setting and getting parameter values. The behaviour of configuration functions is described in general in the [Configuration Functions](#_configuration_functions) section.
+
+    bool WINC_CmdWBCNC
+    (
+        WINC_CMD_REQ_HANDLE handle
+        int32_t optId
+        WINC_TYPE typeOptVal
+        uintptr_t optVal
+        size_t lenOptVal
+    )
+
+<table>
+<caption>Function Parameter Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>handle</p></td>
+<td style="text-align: left;"><p>WINC_CMD_REQ_HANDLE</p></td>
+<td style="text-align: left;"><p>Command request session handle.<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>optId</p></td>
+<td style="text-align: left;"><p>int32_t</p></td>
+<td style="text-align: left;"><p>Parameter ID number. A fractional ID formed with WINC_CmdFormFractInt selects a single value of a multiple value parameter.<br />
+</p>
+<p>optId will be ignored if its value is<br />
+WINC_CMDWBCNC_ID_IGNORE_VAL.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>typeOptVal</p></td>
+<td style="text-align: left;"><p>WINC_TYPE</p></td>
+<td style="text-align: left;"><p>Type of optVal, optVal is not sent if the type is WINC_TYPE_INVALID.<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>optVal</p></td>
+<td style="text-align: left;"><p>uintptr_t</p></td>
+<td style="text-align: left;"><p>Parameter value. For integer types optVal holds the value, for other types optVal is a pointer to the data.<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>lenOptVal</p></td>
+<td style="text-align: left;"><p>size_t</p></td>
+<td style="text-align: left;"><p>Length in bytes of the data optVal points to, ignored for integer types.<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response       | Description   |
+|----------------|---------------|
+| \<ID\>,\<VAL\> | Read response |
+
+**Response Format**
+
+<table>
+<caption>Response Element Description</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ID&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Parameter ID number<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>&lt;VAL&gt;</p></td>
+<td style="text-align: left;"><p>Any</p></td>
+<td style="text-align: left;"><p>Parameter value<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+<table>
+<caption>Configuration Parameters (WINC_CFG_PARAM_ID_WBCN_*)</caption>
+<colgroup>
+<col style="width: 4%" />
+<col style="width: 28%" />
+<col style="width: 17%" />
+<col style="width: 49%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">ID</th>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>PRESET</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Configuration preset<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>DEFAULT</p></td>
+<td style="text-align: left;"><p>Default.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WBCNC_STORE_ID_CHANNEL"></span> 1</p></td>
+<td style="text-align: left;"><p>CHANNEL</p></td>
+<td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
+</p></td>
+<td style="text-align: left;"><p>The channel to send the beacon on (or 0 to use CHANMASK24)<br />
+<br />
+Valid range is 0 to 13<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WBCNC_STORE_ID_SSID"></span> 2</p></td>
+<td style="text-align: left;"><p>SSID</p></td>
+<td style="text-align: left;"><p>STRING<br />
+</p></td>
+<td style="text-align: left;"><p>The SSID advertised in the beacon<br />
+Maximum length of string is 32<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WBCNC_STORE_ID_INTERVAL"></span> 7</p></td>
+<td style="text-align: left;"><p>INTERVAL</p></td>
+<td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
+</p></td>
+<td style="text-align: left;"><p>The interval between beacon transmissions, in milliseconds<br />
+<br />
+Valid range is 100 to 600000<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WBCNC_STORE_ID_NUM_BEACONS"></span> 8</p></td>
+<td style="text-align: left;"><p>NUM_BEACONS</p></td>
+<td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
+</p></td>
+<td style="text-align: left;"><p>The number of beacons to send per channel; 0 to send continuously until a stop request<br />
+<br />
+Unsigned 16-bit value<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p><span id="AN_FUNC_WBCNC_STORE_ID_CHANMASK24"></span> 11</p></td>
+<td style="text-align: left;"><p>CHANMASK24</p></td>
+<td style="text-align: left;"><p>INTEGER_UNSIGNED<br />
+</p></td>
+<td style="text-align: left;"><p>Beacon channel mask (2.4 GHz), used when CHANNEL is 0<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<tbody>
+<tr>
+<td style="text-align: center;"><p><sup>15</sup><br />
+-</p></td>
+<td style="text-align: center;"><p><sup>14</sup><br />
+-</p></td>
+<td style="text-align: center;"><p><sup>13</sup><br />
+CH14</p></td>
+<td style="text-align: center;"><p><sup>12</sup><br />
+CH13</p></td>
+<td style="text-align: center;"><p><sup>11</sup><br />
+CH12</p></td>
+<td style="text-align: center;"><p><sup>10</sup><br />
+CH11</p></td>
+<td style="text-align: center;"><p><sup>9</sup><br />
+CH10</p></td>
+<td style="text-align: center;"><p><sup>8</sup><br />
+CH9</p></td>
+</tr>
+<tr>
+<td style="text-align: center;"><p><sup>7</sup><br />
+CH8</p></td>
+<td style="text-align: center;"><p><sup>6</sup><br />
+CH7</p></td>
+<td style="text-align: center;"><p><sup>5</sup><br />
+CH6</p></td>
+<td style="text-align: center;"><p><sup>4</sup><br />
+CH5</p></td>
+<td style="text-align: center;"><p><sup>3</sup><br />
+CH4</p></td>
+<td style="text-align: center;"><p><sup>2</sup><br />
+CH3</p></td>
+<td style="text-align: center;"><p><sup>1</sup><br />
+CH2</p></td>
+<td style="text-align: center;"><p><sup>0</sup><br />
+CH1</p></td>
+</tr>
+</tbody>
+</table>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0x0001</p></td>
+<td style="text-align: left;"><p>CH1</p></td>
+<td style="text-align: left;"><p>Channel 1 - 2412 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0002</p></td>
+<td style="text-align: left;"><p>CH2</p></td>
+<td style="text-align: left;"><p>Channel 2 - 2417 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0004</p></td>
+<td style="text-align: left;"><p>CH3</p></td>
+<td style="text-align: left;"><p>Channel 3 - 2422 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0008</p></td>
+<td style="text-align: left;"><p>CH4</p></td>
+<td style="text-align: left;"><p>Channel 4 - 2427 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0010</p></td>
+<td style="text-align: left;"><p>CH5</p></td>
+<td style="text-align: left;"><p>Channel 5 - 2432 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0020</p></td>
+<td style="text-align: left;"><p>CH6</p></td>
+<td style="text-align: left;"><p>Channel 6 - 2437 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0040</p></td>
+<td style="text-align: left;"><p>CH7</p></td>
+<td style="text-align: left;"><p>Channel 7 - 2442 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0080</p></td>
+<td style="text-align: left;"><p>CH8</p></td>
+<td style="text-align: left;"><p>Channel 8 - 2447 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0100</p></td>
+<td style="text-align: left;"><p>CH9</p></td>
+<td style="text-align: left;"><p>Channel 9 - 2452 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0200</p></td>
+<td style="text-align: left;"><p>CH10</p></td>
+<td style="text-align: left;"><p>Channel 10 - 2457 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0400</p></td>
+<td style="text-align: left;"><p>CH11</p></td>
+<td style="text-align: left;"><p>Channel 11 - 2462 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x0800</p></td>
+<td style="text-align: left;"><p>CH12</p></td>
+<td style="text-align: left;"><p>Channel 12 - 2467 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x1000</p></td>
+<td style="text-align: left;"><p>CH13</p></td>
+<td style="text-align: left;"><p>Channel 13 - 2472 MHz.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>0x2000</p></td>
+<td style="text-align: left;"><p>CH14</p></td>
+<td style="text-align: left;"><p>Channel 14 - 2485 MHz.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+</tbody>
+</table>
+
+---
+<a id="AN_FUNC_AT_WBCN_WBCN"></a>
+#### WINC_CmdWBCN
+
+##### Description
+
+This function is used to start or stop periodic beacon transmission. Exactly one of WINC_AEC_ID_WBCNDONE or WINC_AEC_ID_WBCNERR closes out every accepted start request. A stop request only requests the stop: its OK does not mark the end of the run, the WINC_AEC_ID_WBCNDONE which follows it does.
+
+    bool WINC_CmdWBCN
+    (
+        WINC_CMD_REQ_HANDLE handle
+        int32_t optState
+    )
+
+<table>
+<caption>Function Parameter Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>handle</p></td>
+<td style="text-align: left;"><p>WINC_CMD_REQ_HANDLE</p></td>
+<td style="text-align: left;"><p>Command request session handle.<br />
+</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>optState</p></td>
+<td style="text-align: left;"><p>int32_t</p></td>
+<td style="text-align: left;"><p>State of the beacon function.<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>DISABLE</p></td>
+<td style="text-align: left;"><p>Disable.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>ENABLE</p></td>
+<td style="text-align: left;"><p>Enable.</p></td>
+</tr>
+</tbody>
+</table>
+<p>optState will be ignored if its value is<br />
+WINC_CMDWBCN_STATE_IGNORE_VAL.</p></td>
+</tr>
+</tbody>
+</table>
+
+| Value | Description |
+|-------|-------------|
+| true  | Success.    |
+| false | Failure.    |
+
+**Return Values**
+
+| Response  | Description |
+|-----------|-------------|
+| \<STATE\> | Query state |
+
+**Response Format**
+
+<table>
+<caption>Response Element Description</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;STATE&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>State of the beacon function<br />
+</p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Value</th>
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>0</p></td>
+<td style="text-align: left;"><p>DISABLE</p></td>
+<td style="text-align: left;"><p>Disabled.</p></td>
+</tr>
+<tr>
+<td style="text-align: left;"><p>1</p></td>
+<td style="text-align: left;"><p>ENABLE</p></td>
+<td style="text-align: left;"><p>Enabled.</p></td>
+</tr>
+</tbody>
+</table></td>
+</tr>
+</tbody>
+</table>
+
+---
+### AEC Reference:
+
+<a id="AN_AEC_AT_WBCN_WBCNDONE"></a>
+#### WINC_AEC_ID_WBCNDONE
+
+##### Description
+
+**Beacon transmission completed.**
+
+| AEC          | Description        |
+|--------------|--------------------|
+| \<NUM_SENT\> | Beaconing complete |
+
+**AEC Syntax**
+
+<table>
+<caption>AEC Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;NUM_SENT&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Number of beacon transmitted. Each transmission covers every channel selected by CHANNEL/CHANMASK24, so this counts channel sets aired, not individual frames. A value below the configured NUM_BEACONS means the run was cut short by a stop request, or that a transmission could not be made<br />
+</p></td>
+</tr>
+</tbody>
+</table>
+
+---
+<a id="AN_AEC_AT_WBCN_WBCNERR"></a>
+#### WINC_AEC_ID_WBCNERR
+
+##### Description
+
+**Beacon run abandoned because the driver rejected a transmit request.**
+
+| AEC            | Description         |
+|----------------|---------------------|
+| \<ERROR_CODE\> | Beaconing abandoned |
+
+**AEC Syntax**
+
+<table>
+<caption>AEC Element Syntax</caption>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 62%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Element Name</th>
+<th style="text-align: left;">Type</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><p>&lt;ERROR_CODE&gt;</p></td>
+<td style="text-align: left;"><p>INTEGER<br />
+</p></td>
+<td style="text-align: left;"><p>Error code<br />
+</p>
+<p>See <a href="#_status_response_codes">Status Response Codes</a></p></td>
+</tr>
+</tbody>
+</table>
+
+---
+### Examples:
+
+<a id="EXAMPLE_WBCN_TARGET_ADVERTISE"></a>
+**Target asset: advertise its location**
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Take the beacon channels from the channel mask
+    APP->>API: WINC_CmdWBCNC(1,0)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Beacon on channels 1, 6 and 11
+    APP->>API: WINC_CmdWBCNC(11,0x0421)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Set the beacon SSID to the asset identifier
+    APP->>API: WINC_CmdWBCNC(2,"ASSET35")
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Send one three-channel transmission every 5 s
+    APP->>API: WINC_CmdWBCNC(7,5000)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Keep advertising until told to stop, rather than stopping after a set count
+    APP->>API: WINC_CmdWBCNC(8,0)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Start beaconing
+    APP->>API: WINC_CmdWBCN(1)
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note right of APP: Request that beaconing stops
+    APP->>API: WINC_CmdWBCN(0)
+    Note left of API: The request is accepted; the run is not over yet
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note left of API: The run is over: 37 beacons transmitted per channel
+    API->>APP: AEC:WINC_AEC_ID_WBCNDONE(37)
+```
+
+<a id="EXAMPLE_WBCN_TRACKER_COMMAND"></a>
+**Tracker asset: send a command to a target asset**
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Set the beacon channel to 6
+    APP->>API: WINC_CmdWBCNC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Set the beacon SSID to the encrypted command payload
+    APP->>API: WINC_CmdWBCNC(2,"CMD3240138012398502495190247597")
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Repeat the command every 1000 ms
+    APP->>API: WINC_CmdWBCNC(7,1000)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Repeat until told to stop, rather than a set number of times: the target only listens for part of each of its scan intervals, so a single transmission is easily missed
+    APP->>API: WINC_CmdWBCNC(8,0)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Start transmitting the beacons carrying the command
+    APP->>API: WINC_CmdWBCN(1)
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note right of APP: Stop repeating the command, the target's response having been received
+    APP->>API: WINC_CmdWBCN(0)
+    Note left of API: The request is accepted; the run is not over yet
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note left of API: The run is over: 12 beacons transmitted
+    API->>APP: AEC:WINC_AEC_ID_WBCNDONE(12)
+```
+
+<a id="EXAMPLE_WBCN_TARGET_FULL"></a>
+**Target asset: a complete exchange with a tracker asset**
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Set the beacon channel to 6
+    APP->>API: WINC_CmdWBCNC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Set the beacon SSID to the asset identifier
+    APP->>API: WINC_CmdWBCNC(2,"ASSET35")
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Advertise once every 1000 ms
+    APP->>API: WINC_CmdWBCNC(7,1000)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Keep advertising until told to stop, rather than stopping after a set count
+    APP->>API: WINC_CmdWBCNC(8,0)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Listen for commands on the beacon channel
+    APP->>API: WINC_CmdWSCNPC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Listen for 500 ms in each scan slot
+    APP->>API: WINC_CmdWSCNPC(3,500)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms
+    APP->>API: WINC_CmdWSCNPC(4,2)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Start a sweep every 5000 ms
+    APP->>API: WINC_CmdWSCNPC(12,5000)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Discard anything weaker than -45 dBm: a tracker asset that distant could not hear the response either
+    APP->>API: WINC_CmdWSCNPC(6,-45)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Report only command payloads, so beacons carrying anything else are dropped
+    APP->>API: WINC_CmdWSCNPC(10,"CMD*")
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Start advertising. No connection is needed: the whole exchange runs in the disconnected state
+    APP->>API: WINC_CmdWBCN(1)
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note right of APP: Start listening for commands, the first sweep starts immediately
+    APP->>API: WINC_CmdWSCNP(1)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: A sweep which overlapped no command beacon
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(0)
+    Note left of API: A command has arrived from the tracker asset
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-30,0,6,"F8:F0:05:AB:CD:EF","CMD3240138012398502495190247597")
+    Note left of API: Sweep completed, 1 result found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(1)
+    Note right of APP: Stop advertising: the beacon configuration is locked while a run is in progress, so the response cannot be loaded until the advertising run has ended
+    APP->>API: WINC_CmdWBCN(0)
+    Note left of API: The request is accepted; the run is not over yet
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note left of API: The advertising run is over: all 75 beacons were confirmed transmitted, some delayed while a scan sweep held the radio
+    API->>APP: AEC:WINC_AEC_ID_WBCNDONE(75)
+    Note right of APP: Set the beacon SSID to the encoded response payload
+    APP->>API: WINC_CmdWBCNC(2,"RSP7620045118820394471029384756")
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Send the response 10 times: the tracker only listens for part of each of its scan intervals, so a single transmission is easily missed
+    APP->>API: WINC_CmdWBCNC(8,10)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Transmit the beacons carrying the response
+    APP->>API: WINC_CmdWBCN(1)
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note left of API: The response run is over: all 10 beacons were transmitted
+    API->>APP: AEC:WINC_AEC_ID_WBCNDONE(10)
+    Note right of APP: Restore the asset identifier
+    APP->>API: WINC_CmdWBCNC(2,"ASSET35")
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Advertise continuously again
+    APP->>API: WINC_CmdWBCNC(8,0)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Resume advertising, the periodic scan having listened for the next command throughout
+    APP->>API: WINC_CmdWBCN(1)
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+```
+
+<a id="EXAMPLE_WBCN_TRACKER_FULL"></a>
+**Tracker asset: a complete exchange with a target asset**
+
+```mermaid
+sequenceDiagram
+    participant APP as App
+    participant API as API
+    Note right of APP: Specify SSID of the Access Point to report findings over
+    APP->>API: WINC_CmdWSTAC(1,"MyAP")
+    API->>APP: Status:WINC_CMD_ID_WSTAC(OK)
+    Note right of APP: Set security type to WPA2-Personal
+    APP->>API: WINC_CmdWSTAC(2,3)
+    API->>APP: Status:WINC_CMD_ID_WSTAC(OK)
+    Note right of APP: Set WPA2 Personal passphrase for connecting to the Access Point
+    APP->>API: WINC_CmdWSTAC(3,"MyAPPSK")
+    API->>APP: Status:WINC_CMD_ID_WSTAC(OK)
+    Note right of APP: Connect
+    APP->>API: WINC_CmdWSTA(1)
+    API->>APP: Status:WINC_CMD_ID_WSTA(OK)
+    Note left of API: Link up: connected on channel 6 to an AP with BSSID 00:01:02:03:04:05
+    API->>APP: AEC:WINC_AEC_ID_WSTALU(1,"00:01:02:03:04:05",6)
+    Note left of API: IP address received via auto configuration (DHCP/SLAAC)
+    API->>APP: AEC:WINC_AEC_ID_WSTAAIP(1,"192.168.0.20")
+    Note right of APP: Set the periodic scan channel to 6
+    APP->>API: WINC_CmdWSCNPC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Listen for 500 ms in each scan slot
+    APP->>API: WINC_CmdWSCNPC(3,500)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Two slots per sweep, so each sweep listens on the channel for a total of 1000 ms
+    APP->>API: WINC_CmdWSCNPC(4,2)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Start a sweep every 5000 ms
+    APP->>API: WINC_CmdWSCNPC(12,5000)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Discard anything weaker than -45 dBm: a target asset that distant could not hear a command either
+    APP->>API: WINC_CmdWSCNPC(6,-45)
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Add a filter for the advertisements of target assets
+    APP->>API: WINC_CmdWSCNPC(10,"ASSET*")
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Add a second filter for the responses they send back. Both filters must be in place before scanning starts, because the scan configuration is locked while it runs
+    APP->>API: WINC_CmdWSCNPC(10,"RSP*")
+    API->>APP: Status:WINC_CMD_ID_WSCNPC(OK)
+    Note right of APP: Enable periodic scanning, the first sweep starts immediately
+    APP->>API: WINC_CmdWSCNP(1)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: A sweep which found no target asset
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(0)
+    Note left of API: Target asset ASSET35 is in range
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-30,0,6,"F8:F0:05:12:34:56","ASSET35")
+    Note left of API: Sweep completed, 1 result found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(1)
+    Note right of APP: Set the beacon channel to 6, the channel the target asset listens on
+    APP->>API: WINC_CmdWBCNC(1,6)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Set the beacon SSID to the encrypted command payload
+    APP->>API: WINC_CmdWBCNC(2,"CMD3240138012398502495190247597")
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Repeat the command every 1000 ms
+    APP->>API: WINC_CmdWBCNC(7,1000)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Repeat until told to stop, rather than a set number of times: the target only listens for part of each of its scan intervals, so a single transmission is easily missed
+    APP->>API: WINC_CmdWBCNC(8,0)
+    API->>APP: Status:WINC_CMD_ID_WBCNC(OK)
+    Note right of APP: Start transmitting the command. Beaconing and periodic scanning run together: a beacon which comes due while a sweep holds the radio waits and is sent once the sweep ends
+    APP->>API: WINC_CmdWBCN(1)
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note left of API: A sweep which saw the advertisement again, but no response yet
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-30,0,6,"F8:F0:05:12:34:56","ASSET35")
+    Note left of API: Sweep completed, 1 result found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(1)
+    Note left of API: The target asset has answered; it stops advertising its identifier while it sends the response
+    API->>APP: AEC:WINC_AEC_ID_WSCNIND(-30,0,6,"F8:F0:05:12:34:56","RSP7620045118820394471029384756")
+    Note left of API: Sweep completed, 1 result found
+    API->>APP: AEC:WINC_AEC_ID_WSCNDONE(1)
+    Note right of APP: The response has been received, so stop repeating the command
+    APP->>API: WINC_CmdWBCN(0)
+    Note left of API: The request is accepted; the run is not over yet
+    API->>APP: Status:WINC_CMD_ID_WBCN(OK)
+    Note left of API: The run is over: all 15 beacons carrying the command were confirmed transmitted, some delayed while one of this asset's own scan sweeps held the radio
+    API->>APP: AEC:WINC_AEC_ID_WBCNDONE(15)
+    Note right of APP: Stop watching for target assets
+    APP->>API: WINC_CmdWSCNP(0)
+    API->>APP: Status:WINC_CMD_ID_WSCNP(OK)
+    Note left of API: The run is over: 19 sweeps were started and none were skipped
+    API->>APP: AEC:WINC_AEC_ID_WSCNPDONE(19,0)
+```
+
+---
+<a id="AN_FUNC_API_BERKELEY_SOCKETS"></a>
 ## Berkeley Sockets APIs
 
 ### Introduction
@@ -22848,7 +28765,7 @@ A socket event callback of type [WINC_SOCKET_EVENT_CALLBACK](#AN_FUNC_API_WINC_S
 Sockets are created by calling the function [socket](#AN_FUNC_API_SOCKET).
 
 ``` c
-/* Creating IPaddr TCP socket. */
+/* Creating IPv4 TCP socket. */
 int sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 ```
 
@@ -22858,7 +28775,7 @@ int sockfd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TLS);
 ```
 
 ``` c
-/* Creating IPaddr UDP socket. */
+/* Creating IPv4 UDP socket. */
 int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 ```
 
@@ -22883,31 +28800,38 @@ addr.sin_port        = htons(80);
 addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
 /* Bind IPv4 TCP socket to local port 80. */
-bind(sockfd, (struct sockaddr*)&addr, sizeof(struct sockaddr_in))
+bind(sockfd, (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
 ```
 
 ``` c
 struct sockaddr_in6 addr;
 
-addr.sin_family      = AF_INET;
-addr.sin_port        = htons(80);
+memset(&addr, 0, sizeof(addr));
+addr.sin6_family = AF_INET6;
+addr.sin6_port   = htons(80);
 memcpy(&addr.sin6_addr, &in6addr_any, sizeof(in6addr_any));
 
 /* Bind IPv6 TCP socket to local port 80. */
-bind(sockfd, (struct sockaddr*)&addr, sizeof(struct sockaddr_in))
+bind(sockfd, (struct sockaddr*)&addr, sizeof(struct sockaddr_in6));
 ```
 
-If the socket supports TLS, the socket must be associated with a TLS context. The TLS function [WINC_CmdTLSC](#AN_FUNC_AT_TLS_TLSC) configures TLS contexts. The `optConf` configuration number will need to be passed to the socket via the [setsockopt](#AN_FUNC_API_SETSOCKOPT) function.
+If the socket supports TLS, the socket must be associated with a TLS configuration. TLS configurations are set up using [WINC_CmdTLSC](#AN_FUNC_AT_TLS_TLSC); the configuration number (`optConf`) is then passed to the socket via the [setsockopt](#AN_FUNC_API_SETSOCKOPT) function. The WINC_CmdTLSC command request must have completed before setsockopt is called.
 
 ``` c
-int tlsIndex;               /* Set to same value as WINC_CmdTLSC. */
+int tlsIndex = 2;
 
+/* Configure TLS configuration 2 with the server certificate and private key. */
+WINC_CmdTLSC(cmdReqHandle, tlsIndex, WINC_CFG_PARAM_ID_TLS_CTX_CERT_NAME, WINC_TYPE_STRING, (uintptr_t)"MyServerCertChain", strlen("MyServerCertChain"));
+WINC_CmdTLSC(cmdReqHandle, tlsIndex, WINC_CFG_PARAM_ID_TLS_CTX_PRI_KEY_NAME, WINC_TYPE_STRING, (uintptr_t)"MyServerPrivateKey", strlen("MyServerPrivateKey"));
+WINC_CmdTLSC(cmdReqHandle, tlsIndex, WINC_CFG_PARAM_ID_TLS_CTX_PEER_AUTH, WINC_TYPE_BOOL, 0, 0);
+
+/* Once the configuration is complete, associate it with the socket. */
 setsockopt(sockfd, IPPROTO_TLS, TLS_CONF_IDX, &tlsIndex, sizeof(tlsIndex));
 ```
 
 TCP server listening sockets will then need to be set to a listening state by calling [listen](#AN_FUNC_API_LISTEN). A backlog can be specified which sets the number of simultaneous sockets supported, the maximum supported is specified by `SOMAXCONN`.
 
-> ***NOTE:*** The backlog value `0` means default which, to converse resources, will be a single socket.
+> ***NOTE:*** The backlog value `0` means default which, to conserve resources, will be a single socket.
 
 ``` c
 listen(sockfd, 0);
@@ -22920,11 +28844,16 @@ listen(sockfd, 0);
 ---
 #### Client Sockets
 
-If the socket supports TLS, the socket must be associated with a TLS context. The TLS API manages TLS contexts and creates context handles; the handle will need to be passed to the socket via the [setsockopt](#AN_FUNC_API_SETSOCKOPT) function after being converted to an index value by calling `WDRV_WINC_TLSCtxHandleToCfgIdx`.
+If the socket supports TLS, the socket must be associated with a TLS configuration. TLS configurations are set up using [WINC_CmdTLSC](#AN_FUNC_AT_TLS_TLSC); the configuration number (`optConf`) is then passed to the socket via the [setsockopt](#AN_FUNC_API_SETSOCKOPT) function. The WINC_CmdTLSC command request must have completed before setsockopt is called.
 
 ``` c
-int tlsIndex = WDRV_WINC_TLSCtxHandleToCfgIdx(tlsHandle);
+int tlsIndex = 1;
 
+/* Configure TLS configuration 1 to authenticate the server. */
+WINC_CmdTLSC(cmdReqHandle, tlsIndex, WINC_CFG_PARAM_ID_TLS_CTX_CA_CERT_NAME, WINC_TYPE_STRING, (uintptr_t)"ServerRootCACert", strlen("ServerRootCACert"));
+WINC_CmdTLSC(cmdReqHandle, tlsIndex, WINC_CFG_PARAM_ID_TLS_CTX_DOMAIN_NAME, WINC_TYPE_STRING, (uintptr_t)"ServerDomain", strlen("ServerDomain"));
+
+/* Once the configuration is complete, associate it with the socket. */
 setsockopt(sockfd, IPPROTO_TLS, TLS_CONF_IDX, &tlsIndex, sizeof(tlsIndex));
 ```
 
@@ -22938,7 +28867,7 @@ addr.sin_port        = htons(80);
 addr.sin_addr.s_addr = htonl(0xC0A80064);
 
 /* Connect an IPv4 socket to 192.168.0.100:80. */
-connect(sockfd, (struct sockaddr*)&addr, sizeof(sockaddr_in));
+connect(sockfd, (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
 ```
 
 #### Multicast Sockets
@@ -22946,27 +28875,30 @@ connect(sockfd, (struct sockaddr*)&addr, sizeof(sockaddr_in));
 Multicast sockets start like server listening sockets by being bound to a local endpoint. The socket then needs to be joined into the appropriate multicast group.
 
 ``` c
-struct in_addr addr = htonl(0xE0000001U);
 struct ip_mreqn group;
 
-memcpy(&group.imr_multiaddr, &addr, sizeof(struct in_addr));
-memcpy(&group.imr_address, &addr, sizeof(struct in_addr));
-
-group.imr_ifindex = 0;
+memset(&group, 0, sizeof(group));
+group.imr_multiaddr.s_addr = htonl(0xE0000001U);
+group.imr_address.s_addr   = htonl(INADDR_ANY);
+group.imr_ifindex          = 0;
 
 /* Join the IPv4 multicast group 224.0.0.1. */
 setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &group, sizeof(group));
 ```
 
+> ***NOTE:*** IPv6 multicast membership uses option level `IPPROTO_IP`. `IPPROTO_IPV6` is not supported.
+
 ``` c
-struct in6_addr addr = {/* IPv6 multicast address*/}
 struct ipv6_mreq group;
 
-memcpy(&group.ipv6mr_multiaddr, &addr, sizeof(struct in6_addr));
+memset(&group, 0, sizeof(group));
+/* IPv6 multicast group ff02::1. */
+group.ipv6mr_multiaddr.s6_addr[0]  = 0xff;
+group.ipv6mr_multiaddr.s6_addr[1]  = 0x02;
+group.ipv6mr_multiaddr.s6_addr[15] = 0x01;
+group.ipv6mr_interface             = 0;
 
-group.ipv6mr_interface = 0;
-
-/* Joining a IPv6 multicast. */
+/* Join the IPv6 multicast group, the option level is IPPROTO_IP. */
 setsockopt(sockfd, IPPROTO_IP, IPV6_ADD_MEMBERSHIP, &group, sizeof(group));
 ```
 
@@ -22993,7 +28925,7 @@ else if (0 != (fd.revents & POLLIN))
     socklen_t sockAddrLen = sizeof(union sockaddr_union);
     int newSockh;
 
-    newSockh = accept(sockh, (struct sockaddr*)&sockAddr, &sockAddrLen)
+    newSockh = accept(sockh, (struct sockaddr*)&sockAddr, &sockAddrLen);
 }
 ```
 
@@ -23049,7 +28981,7 @@ send(sockfd, dataPtr, dataLength, 0);
 ```
 
 ``` c
-struct sockaddr_in      addr
+struct sockaddr_in addr;
 
 addr.sin_family      = AF_INET;
 addr.sin_port        = htons(1000);
@@ -23223,6 +29155,8 @@ typedef enum
     WINC_SOCKET_EVENT_RECV,
     WINC_SOCKET_EVENT_CLOSE,
     WINC_SOCKET_EVENT_TLS_CONNECT,
+    WINC_SOCKET_EVENT_DISCONNECT,
+    WINC_SOCKET_EVENT_DNS_RESOLV,
     WINC_SOCKET_EVENT_ERROR
 } WINC_SOCKET_EVENT;
 ```
@@ -23234,11 +29168,13 @@ typedef enum
 | WINC_SOCKET_EVENT_OPEN | Socket create/open has completed. |
 | WINC_SOCKET_EVENT_LISTEN | Socket listen on local endpoint completed. |
 | WINC_SOCKET_EVENT_CONNECT_REQ | Connection request received. |
-| WINC_SOCKET_EVENT_CONNECT | Connect to remove endpoint completed. |
+| WINC_SOCKET_EVENT_CONNECT | Connect to remote endpoint completed. |
 | WINC_SOCKET_EVENT_SEND | Data send operation completed. |
 | WINC_SOCKET_EVENT_RECV | Data receive operation completed. |
 | WINC_SOCKET_EVENT_CLOSE | Socket close completed. |
 | WINC_SOCKET_EVENT_TLS_CONNECT | TLS connection to remote endpoint completed. |
+| WINC_SOCKET_EVENT_DISCONNECT | A remote disconnection has occurred. |
+| WINC_SOCKET_EVENT_DNS_RESOLV | A DNS resolve event has completed. |
 | WINC_SOCKET_EVENT_ERROR | An error has occurred. |
 
 ##### Remarks
@@ -23377,10 +29313,10 @@ bool WINC_SockInit(WINC_DEVICE_HANDLE devHandle, WINC_SOCKET_INIT_TYPE *pInitDat
 
 ##### Parameters
 
-| Parameter | Type                  | Description                    |
-|-----------|-----------------------|--------------------------------|
-| devHandle | WINC_DEVICE_HANDLE    | WINC device handle             |
-| pInitData | WINC_SOCKET_INIT_TYPE | Pointer to initialisation data |
+| Parameter | Type                    | Description                    |
+|-----------|-------------------------|--------------------------------|
+| devHandle | WINC_DEVICE_HANDLE      | WINC device handle             |
+| pInitData | WINC_SOCKET_INIT_TYPE\* | Pointer to initialisation data |
 
 ##### Returns
 
@@ -23494,7 +29430,7 @@ int connect(int fd, const struct sockaddr *addr, socklen_t len)
 | EAGAIN | The socket is nonblocking, and the connection cannot be completed immediately. |
 | ENOMEM | Insufficient memory is available. |
 | EBADMSG | Bad message. |
-| EINPROGRESS | The socket is nonblocking and the connection cannot be completed immediately.\<br\>It is possible to poll for completion by selecting the socket for writing. After poll indicates writability. |
+| EINPROGRESS | The socket is nonblocking and the connection cannot be completed immediately.<br>It is possible to poll for completion by selecting the socket for writing. After poll indicates writability. |
 | EISCONN | The socket is already connected. |
 
 ---
@@ -23612,30 +29548,31 @@ int poll(struct pollfd *fds, nfds_t nfds, int timeout)
 
 | Parameter | Type | Description |
 |----|----|----|
-| fds | struct pollfd\* | Set of file descriptors to be monitored. |
+| fds | struct pollfd\* | Set of file descriptors to be monitored. Entries with a negative fd are ignored and their revents set to 0. |
 | nfds | nfds_t | Number of items in the fds array. |
-| timeout | int | Specifies the number of milliseconds to block block waiting for a file descriptor to become ready.\<br\>Must be 0. |
+| timeout | int | Must be 0; poll() does not block. |
 
 ##### Returns
 
 On success, `poll()` returns a nonnegative value which is the number of elements in the pollfds whose revents fields have been set to a nonzero value (indicating an event or an error).
 
-A return value of zero indicates that the system call timed out before any file descriptors became ready.
+A return value of zero indicates that no file descriptors are ready.
 
 On error, -1 is returned, and `errno` is set to indicate the error.
 
 ##### Remarks
 
-| errno  | Description                                             |
-|--------|---------------------------------------------------------|
-| EFAULT | System fault.                                           |
-| EINVAL | The nfds value exceeds the WINC_SOCK_NUM_SOCKETS value. |
+| errno | Description |
+|----|----|
+| EFAULT | System fault. |
+| EINVAL | The nfds value exceeds the WINC_SOCK_NUM_SOCKETS value, or timeout is not 0. |
 
 | fds events/revents | Description |
 |----|----|
 | POLLIN | There is data to read. |
 | POLLOUT | Writing is now possible. |
-| POLLHUP | Hang up (only returned in revents; ignored in events).\<br\>Subsequent reads from the channel will return 0 (end of file) only after all outstanding data in the channel has been consumed. |
+| POLLERR | An error has been reported for the socket (only returned in revents; ignored in events).<br>Any requested POLLIN or POLLOUT bits are also set, so that the error is returned by the next recv or send call. |
+| POLLHUP | Hang up (only returned in revents; ignored in events).<br>Subsequent reads from the channel will return 0 (end of file) only after all outstanding data in the channel has been consumed. |
 | POLLNVAL | Invalid request: fd not open (only returned in revents; ignored in events). |
 
 ---
@@ -23919,11 +29856,11 @@ int socket(int domain, int type, int protocol)
 
 ##### Parameters
 
-| Parameter | Type | Description                                                |
-|-----------|------|------------------------------------------------------------|
-| domain    | int  | Communication domain, must be `AF_INET` or `AF_INET6`.     |
-| type      | int  | Socket type, must be `SOCK_STREAM` or `SOCK_DGRAM`.        |
-| protocol  | int  | Specific socket protocol, should be zero or `IPPROTO_TLS`. |
+| Parameter | Type | Description |
+|----|----|----|
+| domain | int | Communication domain, must be `AF_INET` or `AF_INET6`. |
+| type | int | Socket type, must be `SOCK_STREAM` or `SOCK_DGRAM`. |
+| protocol | int | Socket protocol.<br>`SOCK_STREAM`: 0 or `IPPROTO_TCP` for TCP, `IPPROTO_TLS` for TLS.<br>`SOCK_DGRAM`: 0 or `IPPROTO_UDP` for UDP. |
 
 ##### Returns
 
@@ -23934,8 +29871,8 @@ Socket file descriptor or -1 for error (`errno` set).
 | errno | Description |
 |----|----|
 | EAFNOSUPPORT | The implementation does not support the specified address family. |
-| EINVAL | Unknown protocol, or protocol family not available. |
-| EPROTONOSUPPORT | The protocol type or the specified protocol is not supported within this domain. |
+| EINVAL | `type` is not `SOCK_STREAM` or `SOCK_DGRAM`. |
+| EPROTONOSUPPORT | `protocol` is not supported for the socket type. |
 | EFAULT | System fault |
 | ENFILE | The system-wide limit on the total number of open files has been reached. |
 | ENOMEM | Insufficient memory is available. The socket cannot be created until sufficient resources are freed. |
@@ -24194,6 +30131,23 @@ These are examples of using the Berkeley sockets API.
 
 - DNS lookup
 
+#### Prerequisites
+
+The examples assume that the driver has been initialized, the transport is active and the event loop is being run (see [Event Processing](#_event_processing)). The sockets interface must also have been initialized by calling [WINC_SockInit](#AN_FUNC_API_WINC_SOCKINIT).
+
+``` c
+WINC_SOCKET_INIT_TYPE sockInitData;
+
+sockInitData.pfMemAlloc = malloc;
+sockInitData.pfMemFree  = free;
+sockInitData.slabSize   = 1472;
+sockInitData.numSlabs   = 20;
+
+WINC_SockInit(wincDevHandle, &sockInitData);
+```
+
+Socket descriptors start at 0, so the examples use -1 to indicate that no socket is open.
+
 ---
 #### DNS Lookup
 
@@ -24388,7 +30342,7 @@ typedef struct
 } BSOCK_TCP_CLIENT_INIT_TYPE;
 
 static MODULE_STATE                 state;
-static int                          sockh;
+static int                          sockh = -1;
 static BSOCK_TCP_CLIENT_INIT_TYPE   initData = {0};
 
 void bsock_tcp_client_init(void *pInitData)
@@ -24556,10 +30510,10 @@ void bsock_tcp_client_run(void)
 
         case MODULE_STATE_DISCONNECTED:
         {
-            if (0 != sockh)
+            if (sockh >= 0)
             {
                 shutdown(sockh, SHUT_RDWR);
-                sockh = 0;
+                sockh = -1;
             }
             break;
         }
@@ -24602,15 +30556,22 @@ typedef struct
 } BSOCK_TCP_SERVER_INIT_TYPE;
 
 static MODULE_STATE                 state;
-static int                          sockh;
-static int                          sockhClient[TCP_SERVER_MAX_CLIENTS] = {0};
+static int                          sockh = -1;
+static int                          sockhClient[TCP_SERVER_MAX_CLIENTS];
 static BSOCK_TCP_SERVER_INIT_TYPE   initData = {0};
 
 void bsock_tcp_server_init(void *pInitData)
 {
+    int i;
+
     if (NULL != pInitData)
     {
         memcpy(&initData, pInitData, sizeof(BSOCK_TCP_SERVER_INIT_TYPE));
+    }
+
+    for (i=0; i<TCP_SERVER_MAX_CLIENTS; i++)
+    {
+        sockhClient[i] = -1;
     }
 
     state = MODULE_STATE_INIT;
@@ -24679,7 +30640,6 @@ void bsock_tcp_server_run(void)
         case MODULE_STATE_LISTENING:
         {
             int i;
-            int numfds = 1;
 
             struct pollfd fd[1+TCP_SERVER_MAX_CLIENTS] = {0};
 
@@ -24688,16 +30648,12 @@ void bsock_tcp_server_run(void)
 
             for (i=0; i<TCP_SERVER_MAX_CLIENTS; i++)
             {
-                fd[i+1].fd = sockhClient[i];
-
-                if (0 != fd[i+1].fd)
-                {
-                    fd[i+1].events = POLLIN|POLLOUT;
-                    numfds++;
-                }
+                /* Unused entries have fd -1 and are ignored by poll. */
+                fd[i+1].fd     = sockhClient[i];
+                fd[i+1].events = POLLIN|POLLOUT;
             }
 
-            if (-1 == poll(fd, numfds, 0))
+            if (-1 == poll(fd, 1+TCP_SERVER_MAX_CLIENTS, 0))
             {
                 state = MODULE_STATE_ERROR;
                 break;
@@ -24711,15 +30667,11 @@ void bsock_tcp_server_run(void)
                     socklen_t sockAddrLen = sizeof(union sockaddr_union);
                     char ipStr[64];
 
-                    if (0 == sockhClient[i])
+                    if (-1 == sockhClient[i])
                     {
                         sockhClient[i] = accept(sockh, (struct sockaddr*)&sockAddr, &sockAddrLen);
 
-                        if (-1 == sockhClient[i])
-                        {
-                            sockhClient[i] = 0;
-                        }
-                        else
+                        if (sockhClient[i] >= 0)
                         {
                             if (AF_INET == sockAddr.sin_family)
                             {
@@ -24740,7 +30692,7 @@ void bsock_tcp_server_run(void)
 
             for (i=1; i<=TCP_SERVER_MAX_CLIENTS; i++)
             {
-                if ((0 != fd[i].fd) && (0 != fd[i].revents))
+                if ((fd[i].fd >= 0) && (0 != fd[i].revents))
                 {
                     ssize_t numBytes = 0;
                     uint8_t buffer[128];
@@ -24753,7 +30705,7 @@ void bsock_tcp_server_run(void)
                         if ((numBytes <= 0) && (errno != EWOULDBLOCK))
                         {
                             shutdown(fd[i].fd, SHUT_RDWR);
-                            sockhClient[i-1] = 0;
+                            sockhClient[i-1] = -1;
                             break;
                         }
 
@@ -24770,7 +30722,7 @@ void bsock_tcp_server_run(void)
                             {
                                 printf("recv failed, errno is %d\n", errno);
                                 shutdown(fd[i].fd, SHUT_RDWR);
-                                sockhClient[i-1] = 0;
+                                sockhClient[i-1] = -1;
                                 break;
                             }
                         }
@@ -24785,7 +30737,7 @@ void bsock_tcp_server_run(void)
                         if (0 == (fd[i].revents & POLLIN))
                         {
                             shutdown(fd[i].fd, SHUT_RDWR);
-                            sockhClient[i-1] = 0;
+                            sockhClient[i-1] = -1;
                             break;
                         }
                     }
@@ -24801,7 +30753,7 @@ void bsock_tcp_server_run(void)
                             {
                                 printf("send failed, errno is %d\n", errno);
                                 shutdown(fd[i].fd, SHUT_RDWR);
-                                sockhClient[i-1] = 0;
+                                sockhClient[i-1] = -1;
                                 break;
                             }
                         }
@@ -24849,7 +30801,7 @@ typedef struct
 } BSOCK_UDP_CLIENT_INIT_TYPE;
 
 static MODULE_STATE                 state;
-static int                          sockh;
+static int                          sockh = -1;
 static BSOCK_UDP_CLIENT_INIT_TYPE   initData = {0};
 
 void bsock_udp_client_init(void *pInitData)
@@ -25022,10 +30974,10 @@ void bsock_udp_client_run(void)
 
         case MODULE_STATE_DISCONNECTED:
         {
-            if (0 != sockh)
+            if (sockh >= 0)
             {
                 shutdown(sockh, SHUT_RDWR);
-                sockh = 0;
+                sockh = -1;
             }
             break;
         }
@@ -25049,6 +31001,8 @@ void bsock_udp_client_run(void)
 ``` c
 #include <string.h>
 
+#include "winc_socket.h"
+
 #define UDP_SERVER_MAX_CLIENTS  2
 
 typedef enum
@@ -25066,7 +31020,7 @@ typedef struct
 } BSOCK_UDP_SERVER_INIT_TYPE;
 
 static MODULE_STATE                 state;
-static int                          sockh;
+static int                          sockh = -1;
 static BSOCK_UDP_SERVER_INIT_TYPE   initData = {0};
 
 void bsock_udp_server_init(void *pInitData)
@@ -25204,10 +31158,10 @@ void bsock_udp_server_run(void)
 
         case MODULE_STATE_DISCONNECTED:
         {
-            if (0 != sockh)
+            if (sockh >= 0)
             {
                 shutdown(sockh, SHUT_RDWR);
-                sockh = 0;
+                sockh = -1;
             }
             break;
         }
@@ -25274,6 +31228,10 @@ void bsock_udp_server_run(void)
 <tr>
 <td></td>
 <td><a href="#EXAMPLE_52043c5b1266965e87fee1d62cf0473db94a8a9f">Restoring configuration from storage</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_CFG_PARTIAL">Storing a partial configuration</a></td>
 </tr>
 <tr>
 <td>DNS</td>
@@ -25421,7 +31379,7 @@ void bsock_udp_server_run(void)
 </tr>
 <tr>
 <td></td>
-<td><a href="#EXAMPLE_12de0326b22680d3b9cc3d612dba34e5f4d023fe">Open a TLS client socket with AT+SOCK</a></td>
+<td><a href="#EXAMPLE_b727ea9918f20ca000a04c56d63af4f37dafd8a6">Open a TLS client socket</a></td>
 </tr>
 <tr>
 <td></td>
@@ -25429,7 +31387,7 @@ void bsock_udp_server_run(void)
 </tr>
 <tr>
 <td></td>
-<td><a href="#EXAMPLE_a70e12e9f2deb08dda4c674bca8584fd9c59e257">Open a TLS server socket with AT+SOCK</a></td>
+<td><a href="#EXAMPLE_2768fe54a6516136aa956658c21d99e275b3d9d0">Open a TLS server socket</a></td>
 </tr>
 <tr>
 <td></td>
@@ -25448,6 +31406,18 @@ void bsock_udp_server_run(void)
 <td><a href="#EXAMPLE_286d6c7f74c01a7bacc3d6fcaa240ad067b1f736">Setting SSID filter with WINC_CmdWSCNC</a></td>
 </tr>
 <tr>
+<td></td>
+<td><a href="#EXAMPLE_8b708174983f8fc67c0f6d84e73ff4686d515be3">Setting SSID prefix filters with WINC_CmdWSCNC</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WSCNP_PREFIX_FILTER">Periodic passive scanning with an SSID prefix filter</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WSCNP_PAYLOAD_FILTER">Periodic passive scanning with an SSID prefix filter</a></td>
+</tr>
+<tr>
 <td>WSTA</td>
 <td><a href="#EXAMPLE_WSTA_PERSONAL">WPA Personal: Configure STA connection parameters</a></td>
 </tr>
@@ -25458,6 +31428,10 @@ void bsock_udp_server_run(void)
 <tr>
 <td></td>
 <td><a href="#EXAMPLE_WSTA_RECONNECT">Some disconnections, reconnections and roaming</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WSTA_BLOCKED_BY_SCAN">WINC_CmdWSTA refused while a scan or periodic</a></td>
 </tr>
 <tr>
 <td></td>
@@ -25496,6 +31470,14 @@ void bsock_udp_server_run(void)
 <td><a href="#EXAMPLE_c37bae967b299185b054858a003c7507e0b388a9">WINC_CmdWIFIC coexistence settings for 3-wire PTA interface</a></td>
 </tr>
 <tr>
+<td></td>
+<td><a href="#EXAMPLE_WIFI_VSIE_TX">Configure vendor-specific information elements for transmission</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WIFI_VSIE_RX">Configure vendor-specific information element reception</a></td>
+</tr>
+<tr>
 <td>NVM</td>
 <td><a href="#EXAMPLE_NVM_EXAMPLE">Simple example of NVM usage</a></td>
 </tr>
@@ -25530,6 +31512,22 @@ void bsock_udp_server_run(void)
 <tr>
 <td></td>
 <td><a href="#EXAMPLE_HTTP_5">HTTP basic authentication using additional request headers</a></td>
+</tr>
+<tr>
+<td>WBCN</td>
+<td><a href="#EXAMPLE_WBCN_TARGET_ADVERTISE">Target asset: advertise its location</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WBCN_TRACKER_COMMAND">Tracker asset: send a command to a target asset</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WBCN_TARGET_FULL">Target asset: a complete exchange with a tracker asset</a></td>
+</tr>
+<tr>
+<td></td>
+<td><a href="#EXAMPLE_WBCN_TRACKER_FULL">Tracker asset: a complete exchange with a target asset</a></td>
 </tr>
 </tbody>
 </table>

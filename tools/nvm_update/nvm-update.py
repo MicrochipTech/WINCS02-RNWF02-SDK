@@ -207,7 +207,7 @@ class FirmwareUpdate:
     def reset_device(self):
         """Reset the device"""
         print(f"\n{C_YELLOW}Resetting device...{C_RESET}")
-        # +BOOT:"RNWF - AT Command Interface 3.2.0
+        # +BOOT:"RNWF - AT Command Interface 3.3.0
         # (c) 2026 Microchip Technology Inc"
         self.send_command(b'AT+RST', expected=b'nology Inc"\r\n')
         print(f"{TICK} Device reset command sent")

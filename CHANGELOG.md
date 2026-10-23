@@ -2,6 +2,31 @@
 
 This file documents all notable changes to **WINCS02** and **RNWF02** firmware.
 
+## [v3.3.0] — October 2026
+
+### New Features
+- Periodic scanning and beacon transmission (WSCNP, WBCN) for asset tracking and similar beacon-based applications
+- Vendor-specific information elements (IEs) in beacon, probe request and probe response frames, for transmit and receive
+- Large MQTT messages (up to 16KB): fragmented publish and buffered subscribe
+- Hotspot: MAC address blocklist
+
+### Enhancements
+- SSID prefix matching in the scan filter list
+- Hotspot: ability to disconnect an associated STA
+- IPv6: option to disable SLAAC
+- OTA: HTTP status errors (e.g. 401, 404) are reported immediately in +OTAERR
+- MQTT: oversized messages are rejected and reported
+- Reduced XDS sleep current and cold boot current consumption
+- **WINCS02 only:** Extended error API in the driver, giving more detail about driver failures
+
+### Fixes
+- Security: fixes for vulnerabilities in the Wi-Fi firmware and the network controller application (see [SECURITY.md](./SECURITY.md))
+- Wi-Fi: WSTAC BSSID configuration now limits the AP connected to; connection state is cleared after a failed connect; Hotspot no longer loses STA connections after scanning
+- MQTT: fixed byte array publish payloads, publish failures within specified limits, empty topic names and corrupted or partial multi-chunk received messages, and recovery from oversized received messages
+- Power save: fixed crash when XDS is enabled with the secondary oscillator selected but no crystal fitted
+- Bypass mode: fixed crash on receiving a 14-byte Ethernet frame
+- **WINCS02 only:** Driver fixes for Berkeley socket locking and UDP buffer leak, crash on SDIO bus failure, missing scan completion when all results are filtered, power save configuration, and resource clean-up when initialisation fails
+
 ## [v3.2.0] — March 2026
 
 > **Note:** Firmware binary filenames changed in this release.

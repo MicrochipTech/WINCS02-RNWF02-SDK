@@ -73,6 +73,8 @@ typedef uintptr_t WINC_CMD_REQ_HANDLE;
 #define WINC_CMDFSRECV_DATA_LENGTH_IGNORE_VAL            (0)
 #define WINC_CMDMQTTC_ID_IGNORE_VAL                      (-1)
 #define WINC_CMDMQTTCONN_CLEAN_IGNORE_VAL                (-1)
+#define WINC_CMDMQTTPUBFRAG_FRAG_IGNORE_VAL              (-1)
+#define WINC_CMDMQTTPUBFRAG_COMP_IGNORE_VAL              (-1)
 #define WINC_CMDMQTTDISCONN_REASON_CODE_IGNORE_VAL       (-1)
 #define WINC_CMDMQTTPROPTX_ID_IGNORE_VAL                 (-1)
 #define WINC_CMDMQTTPROPRX_ID_IGNORE_VAL                 (-1)
@@ -99,9 +101,12 @@ typedef uintptr_t WINC_CMD_REQ_HANDLE;
 #define WINC_CMDWAPC_ID_IGNORE_VAL                       (-1)
 #define WINC_CMDWAP_STATE_IGNORE_VAL                     (-1)
 #define WINC_CMDWSCNC_ID_IGNORE_VAL                      (-1)
+#define WINC_CMDWSCNPC_ID_IGNORE_VAL                     (-1)
+#define WINC_CMDWSCNP_STATE_IGNORE_VAL                   (-1)
 #define WINC_CMDWSTAC_ID_IGNORE_VAL                      (-1)
 #define WINC_CMDWSTA_STATE_IGNORE_VAL                    (-1)
 #define WINC_CMDASSOC_ASSOC_ID_IGNORE_VAL                (0)
+#define WINC_CMDASSOC_STATE_IGNORE_VAL                   (-1)
 #define WINC_CMDSI_FILTER_IGNORE_VAL                     (0)
 #define WINC_CMDWPROVC_ID_IGNORE_VAL                     (-1)
 #define WINC_CMDWPROV_STATE_IGNORE_VAL                   (-1)
@@ -113,6 +118,8 @@ typedef uintptr_t WINC_CMD_REQ_HANDLE;
 #define WINC_CMDARB_VALUE_IGNORE_VAL                     (0)
 #define WINC_CMDHTTPC_CONF_IGNORE_VAL                    (0)
 #define WINC_CMDHTTPC_ID_IGNORE_VAL                      (-1)
+#define WINC_CMDWBCNC_ID_IGNORE_VAL                      (-1)
+#define WINC_CMDWBCN_STATE_IGNORE_VAL                    (-1)
 
 #define WINC_CmdFormFractInt(intVal, fracVal)       ((((uint32_t)(intVal)) << 16) | (fracVal))
 
@@ -179,10 +186,15 @@ bool WINC_CmdGMR(WINC_CMD_REQ_HANDLE handle);
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -205,12 +217,20 @@ bool WINC_CmdCFG(WINC_CMD_REQ_HANDLE handle, int32_t optId, WINC_TYPE typeOptVal
 
   Parameters:
     handle     - Command request session handle
-    typeCfgsrc - Type of cfgsrc
-    cfgsrc     - Configuration source
-    lenCfgsrc  - Length of cfgsrc
-    typeCfgdst - Type of cfgdst
-    cfgdst     - Configuration destination
-    lenCfgdst  - Length of cfgdst
+    typeCfgsrc - Type of cfgsrc, cfgsrc is not sent if the type is
+                    WINC_TYPE_INVALID
+    cfgsrc     - Configuration source: slot number (0 = active) or file name.
+                    For integer types cfgsrc holds the value, for other types
+                    cfgsrc is a pointer to the data
+    lenCfgsrc  - Length in bytes of the data cfgsrc points to, ignored for
+                    integer types
+    typeCfgdst - Type of cfgdst, cfgdst is not sent if the type is
+                    WINC_TYPE_INVALID
+    cfgdst     - Configuration destination: slot number (0 = active) or file
+                    name. For integer types cfgdst holds the value, for other
+                    types cfgdst is a pointer to the data
+    lenCfgdst  - Length in bytes of the data cfgdst points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -230,10 +250,15 @@ bool WINC_CmdCFGCP(WINC_CMD_REQ_HANDLE handle, WINC_TYPE typeCfgsrc, uintptr_t c
   Parameters:
     handle     - Command request session handle
     optIdx     - Pool index
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -258,10 +283,15 @@ bool WINC_CmdDHCPSC(WINC_CMD_REQ_HANDLE handle, int32_t optIdx, int32_t optId, W
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -286,7 +316,8 @@ bool WINC_CmdDNSC(WINC_CMD_REQ_HANDLE handle, int32_t optId, WINC_TYPE typeOptVa
     handle       - Command request session handle
     type         - Type of record
     pQueryName   - Query name to resolve
-    lenQueryName - Length of pQueryName
+    lenQueryName - Length of pQueryName in bytes, strings are not NUL
+                      terminated so the length must not include a terminator
 
   Returns:
     true  - Success.
@@ -308,7 +339,8 @@ bool WINC_CmdDNSRESOLV(WINC_CMD_REQ_HANDLE handle, uint8_t type, const uint8_t* 
     op             - Operation
     optFiletype    - File type
     pOptFilename   - The name of the file
-    lenOptFilename - Length of pOptFilename
+    lenOptFilename - Length of pOptFilename in bytes, strings are not NUL
+                        terminated so the length must not include a terminator
 
   Returns:
     true  - Success.
@@ -335,7 +367,8 @@ bool WINC_CmdFSOP(WINC_CMD_REQ_HANDLE handle, uint8_t op, int32_t optFiletype, c
     handle         - Command request session handle
     filetype       - File type
     pOptFilename   - The name of the file
-    lenOptFilename - Length of pOptFilename
+    lenOptFilename - Length of pOptFilename in bytes, strings are not NUL
+                        terminated so the length must not include a terminator
     optFilelength  - File length
 
   Returns:
@@ -363,7 +396,8 @@ bool WINC_CmdFSLOAD(WINC_CMD_REQ_HANDLE handle, uint8_t filetype, const uint8_t*
     handle      - Command request session handle
     filetype    - File type
     pFilename   - The name of the file
-    lenFilename - Length of pFilename
+    lenFilename - Length of pFilename in bytes, strings are not NUL terminated
+                     so the length must not include a terminator
 
   Returns:
     true  - Success.
@@ -385,7 +419,7 @@ bool WINC_CmdFSSTORE(WINC_CMD_REQ_HANDLE handle, uint8_t filetype, const uint8_t
     optTsfrHandle - Transfer handle
     optBlockNum   - Block number
     pOptData      - Transfer data
-    lenOptData    - Length of pOptData
+    lenOptData    - Length of pOptData in bytes
     optCrc        - Transfer CRC-16
 
   Returns:
@@ -440,10 +474,15 @@ bool WINC_CmdFSRECV(WINC_CMD_REQ_HANDLE handle, uint16_t tsfrHandle, uint8_t blo
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -490,7 +529,8 @@ bool WINC_CmdMQTTCONN(WINC_CMD_REQ_HANDLE handle, int32_t optClean);
   Parameters:
     handle       - Command request session handle
     pTopicName   - Topic Name
-    lenTopicName - Length of pTopicName
+    lenTopicName - Length of pTopicName in bytes, strings are not NUL
+                      terminated so the length must not include a terminator
     maxQos       - Maximum QoS
 
   Returns:
@@ -524,12 +564,13 @@ bool WINC_CmdMQTTSUBLST(WINC_CMD_REQ_HANDLE handle);
 
 /*****************************************************************************
   Description:
-    This function is used receive data from subscriptions.
+    This function is used to receive data from subscriptions.
 
   Parameters:
     handle       - Command request session handle
     pTopicName   - Topic Name
-    lenTopicName - Length of pTopicName
+    lenTopicName - Length of pTopicName in bytes, strings are not NUL
+                      terminated so the length must not include a terminator
     msgId        - Message Identifier
     length       - The number of bytes to receive
 
@@ -551,7 +592,8 @@ bool WINC_CmdMQTTSUBRD(WINC_CMD_REQ_HANDLE handle, const uint8_t* pTopicName, si
   Parameters:
     handle       - Command request session handle
     pTopicName   - Topic Name
-    lenTopicName - Length of pTopicName
+    lenTopicName - Length of pTopicName in bytes, strings are not NUL
+                      terminated so the length must not include a terminator
 
   Returns:
     true  - Success.
@@ -566,18 +608,22 @@ bool WINC_CmdMQTTUNSUB(WINC_CMD_REQ_HANDLE handle, const uint8_t* pTopicName, si
 
 /*****************************************************************************
   Description:
-    This function is used to publish a message.
+    Publish a message (single or fragmented).
 
   Parameters:
     handle          - Command request session handle
-    dup             - Duplicate Message
+    frag            - Fragment Number (0=complete, 1=first, 2+=continuation)
     qos             - QoS
     retain          - Retain Message
-    typeTopicNameId - Type of topicNameId
-    topicNameId     - Topic Name or Alias
-    lenTopicNameId  - Length of topicNameId
+    typeTopicNameId - Type of topicNameId, topicNameId is not sent if the type
+                         is WINC_TYPE_INVALID
+    topicNameId     - Topic Name or Alias. For integer types topicNameId holds
+                         the value, for other types topicNameId is a pointer to
+                         the data
+    lenTopicNameId  - Length in bytes of the data topicNameId points to,
+                         ignored for integer types
     pTopicPayload   - Topic Payload
-    lenTopicPayload - Length of pTopicPayload
+    lenTopicPayload - Length of pTopicPayload in bytes
 
   Returns:
     true  - Success.
@@ -588,7 +634,38 @@ bool WINC_CmdMQTTUNSUB(WINC_CMD_REQ_HANDLE handle, const uint8_t* pTopicName, si
 
  *****************************************************************************/
 
-bool WINC_CmdMQTTPUB(WINC_CMD_REQ_HANDLE handle, uint8_t dup, uint8_t qos, uint8_t retain, WINC_TYPE typeTopicNameId, uintptr_t topicNameId, size_t lenTopicNameId, const uint8_t* pTopicPayload, size_t lenTopicPayload);
+bool WINC_CmdMQTTPUB(WINC_CMD_REQ_HANDLE handle, uint8_t frag, uint8_t qos, uint8_t retain, WINC_TYPE typeTopicNameId, uintptr_t topicNameId, size_t lenTopicNameId, const uint8_t* pTopicPayload, size_t lenTopicPayload);
+
+/*****************************************************************************
+  Description:
+    Publish a message (single or fragmented).
+
+  Parameters:
+    handle             - Command request session handle
+    optFrag            - Fragment Number (0=complete, 1=first,
+                            2+=continuation)
+    optComp            - Completion Flag
+    pOptTopicPayload   - Topic Payload
+    lenOptTopicPayload - Length of pOptTopicPayload in bytes
+
+  Returns:
+    true  - Success.
+    false - Failure.
+
+  Remarks:
+    This function has optional parameters, when an optional parameter is set
+    to its ignore value it and all subsequent parameters are ignored.
+    Subsequent parameters should also be set to their ignore values.
+
+    optFrag will be ignored if its value is WINC_CMDMQTTPUBFRAG_FRAG_IGNORE_VAL.
+
+    optComp will be ignored if its value is WINC_CMDMQTTPUBFRAG_COMP_IGNORE_VAL.
+
+    pOptTopicPayload will be ignored if its value is NULL.
+
+ *****************************************************************************/
+
+bool WINC_CmdMQTTPUBFRAG(WINC_CMD_REQ_HANDLE handle, int32_t optFrag, int32_t optComp, const uint8_t* pOptTopicPayload, size_t lenOptTopicPayload);
 
 /*****************************************************************************
   Description:
@@ -599,9 +676,10 @@ bool WINC_CmdMQTTPUB(WINC_CMD_REQ_HANDLE handle, uint8_t dup, uint8_t qos, uint8
     qos             - QoS
     retain          - Retain Message
     pTopicName      - Topic Name
-    lenTopicName    - Length of pTopicName
+    lenTopicName    - Length of pTopicName in bytes, strings are not NUL
+                         terminated so the length must not include a terminator
     pTopicPayload   - Topic Payload
-    lenTopicPayload - Length of pTopicPayload
+    lenTopicPayload - Length of pTopicPayload in bytes
 
   Returns:
     true  - Success.
@@ -643,10 +721,15 @@ bool WINC_CmdMQTTDISCONN(WINC_CMD_REQ_HANDLE handle, int32_t optReasonCode);
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -670,9 +753,11 @@ bool WINC_CmdMQTTPROPTX(WINC_CMD_REQ_HANDLE handle, int32_t optId, WINC_TYPE typ
   Parameters:
     handle     - Command request session handle
     pKey       - Parameter key
-    lenKey     - Length of pKey
+    lenKey     - Length of pKey in bytes, strings are not NUL terminated so
+                    the length must not include a terminator
     pOptVals   - Parameter value
-    lenOptVals - Length of pOptVals
+    lenOptVals - Length of pOptVals in bytes, strings are not NUL terminated
+                    so the length must not include a terminator
 
   Returns:
     true  - Success.
@@ -695,7 +780,9 @@ bool WINC_CmdMQTTPROPTXKV(WINC_CMD_REQ_HANDLE handle, const uint8_t* pKey, size_
 
   Parameters:
     handle - Command request session handle
-    optId  - Parameter ID number
+    optId  - Parameter ID number. A fractional ID formed with
+                WINC_CmdFormFractInt selects a single value of a multiple value
+                parameter
 
   Returns:
     true  - Success.
@@ -718,9 +805,11 @@ bool WINC_CmdMQTTPROPRX(WINC_CMD_REQ_HANDLE handle, int32_t optId);
 
   Parameters:
     handle  - Command request session handle
-    typeVal - Type of val
-    val     - Parameter value
-    lenVal  - Length of val
+    typeVal - Type of val, val is not sent if the type is WINC_TYPE_INVALID
+    val     - Parameter value. For integer types val holds the value, for
+                 other types val is a pointer to the data
+    lenVal  - Length in bytes of the data val points to, ignored for integer
+                 types
 
   Returns:
     true  - Success.
@@ -766,10 +855,15 @@ bool WINC_CmdMQTTPROPTXS(WINC_CMD_REQ_HANDLE handle, int32_t optPropId, int32_t 
   Parameters:
     handle     - Command request session handle
     optIntf    - Interface number
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -796,7 +890,7 @@ bool WINC_CmdNETIFC(WINC_CMD_REQ_HANDLE handle, int32_t optIntf, int32_t optId, 
     handle  - Command request session handle
     intf    - Interface number
     pData   - Data frame data
-    lenData - Length of pData
+    lenData - Length of pData in bytes
 
   Returns:
     true  - Success.
@@ -815,10 +909,15 @@ bool WINC_CmdNETIFTX(WINC_CMD_REQ_HANDLE handle, uint8_t intf, const uint8_t* pD
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -837,7 +936,7 @@ bool WINC_CmdOTAC(WINC_CMD_REQ_HANDLE handle, int32_t optId, WINC_TYPE typeOptVa
 
 /*****************************************************************************
   Description:
-    This function allows the downloading of firmware to the WINC.
+    This function allows the downloading of firmware to the device.
 
   Parameters:
     handle - Command request session handle
@@ -915,9 +1014,13 @@ bool WINC_CmdOTAINV(WINC_CMD_REQ_HANDLE handle);
 
   Parameters:
     handle             - Command request session handle
-    typeTargetAddr     - Type of targetAddr
-    targetAddr         - IP address or host name of target
-    lenTargetAddr      - Length of targetAddr
+    typeTargetAddr     - Type of targetAddr, targetAddr is not sent if the
+                            type is WINC_TYPE_INVALID
+    targetAddr         - IP address or host name of target. For integer types
+                            targetAddr holds the value, for other types
+                            targetAddr is a pointer to the data
+    lenTargetAddr      - Length in bytes of the data targetAddr points to,
+                            ignored for integer types
     optProtocolVersion - IP protocol version
 
   Returns:
@@ -937,7 +1040,7 @@ bool WINC_CmdPING(WINC_CMD_REQ_HANDLE handle, WINC_TYPE typeTargetAddr, uintptr_
 
 /*****************************************************************************
   Description:
-    This function is used to reset the WINC.
+    This function is used to reset the device.
 
   Parameters:
     handle - Command request session handle
@@ -959,10 +1062,15 @@ bool WINC_CmdRST(WINC_CMD_REQ_HANDLE handle);
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -1009,9 +1117,10 @@ bool WINC_CmdSOCKO(WINC_CMD_REQ_HANDLE handle, uint8_t protocol, uint8_t optProt
 
   Parameters:
     handle      - Command request session handle
-    sockId      - The socket ID
+    sockId      - Socket ID, as returned by SOCKO
     lclPort     - The local port number to use
-    optPendSkts - Number of pending sockets connections
+    optPendSkts - Maximum number of simultaneous connections, limited by the
+                     number of free TCP sockets
 
   Returns:
     true  - Success.
@@ -1034,10 +1143,14 @@ bool WINC_CmdSOCKBL(WINC_CMD_REQ_HANDLE handle, uint16_t sockId, uint16_t lclPor
 
   Parameters:
     handle      - Command request session handle
-    sockId      - The socket ID
-    typeRmtAddr - Type of rmtAddr
-    rmtAddr     - The address of the remote device
-    lenRmtAddr  - Length of rmtAddr
+    sockId      - Socket ID, as returned by SOCKO
+    typeRmtAddr - Type of rmtAddr, rmtAddr is not sent if the type is
+                     WINC_TYPE_INVALID
+    rmtAddr     - The address of the remote device. For integer types rmtAddr
+                     holds the value, for other types rmtAddr is a pointer to
+                     the data
+    lenRmtAddr  - Length in bytes of the data rmtAddr points to, ignored for
+                     integer types
     rmtPort     - The port number on the remote device
 
   Returns:
@@ -1057,10 +1170,14 @@ bool WINC_CmdSOCKBR(WINC_CMD_REQ_HANDLE handle, uint16_t sockId, WINC_TYPE typeR
 
   Parameters:
     handle        - Command request session handle
-    sockId        - The socket ID
-    typeMcastAddr - Type of mcastAddr
-    mcastAddr     - The address of the multicast group
-    lenMcastAddr  - Length of mcastAddr
+    sockId        - Socket ID, as returned by SOCKO
+    typeMcastAddr - Type of mcastAddr, mcastAddr is not sent if the type is
+                       WINC_TYPE_INVALID
+    mcastAddr     - The address of the multicast group. For integer types
+                       mcastAddr holds the value, for other types mcastAddr is
+                       a pointer to the data
+    lenMcastAddr  - Length in bytes of the data mcastAddr points to, ignored
+                       for integer types
     mcastPort     - The port number of the multicast group
 
   Returns:
@@ -1080,8 +1197,8 @@ bool WINC_CmdSOCKBM(WINC_CMD_REQ_HANDLE handle, uint16_t sockId, WINC_TYPE typeM
 
   Parameters:
     handle  - Command request session handle
-    sockId  - The socket ID
-    tlsConf - TLS certificate configuration
+    sockId  - Socket ID, as returned by SOCKO
+    tlsConf - TLS configuration index (see +TLSC)
 
   Returns:
     true  - Success.
@@ -1101,11 +1218,12 @@ bool WINC_CmdSOCKTLS(WINC_CMD_REQ_HANDLE handle, uint16_t sockId, uint8_t tlsCon
 
   Parameters:
     handle    - Command request session handle
-    sockId    - The socket ID
+    sockId    - Socket ID, as returned by SOCKO
     length    - The length of the data to send
-    optSeqNum - Sequence number of first byte
+    optSeqNum - Sequence number of first byte. Once used, required on every
+                   subsequent ASCII or hex write
     pData     - The data to send
-    lenData   - Length of pData
+    lenData   - Length of pData in bytes
 
   Returns:
     true  - Success.
@@ -1129,15 +1247,20 @@ bool WINC_CmdSOCKWR(WINC_CMD_REQ_HANDLE handle, uint16_t sockId, uint16_t length
 
   Parameters:
     handle      - Command request session handle
-    sockId      - The socket ID
-    typeRmtAddr - Type of rmtAddr
-    rmtAddr     - The address of the remote device
-    lenRmtAddr  - Length of rmtAddr
+    sockId      - Socket ID, as returned by SOCKO
+    typeRmtAddr - Type of rmtAddr, rmtAddr is not sent if the type is
+                     WINC_TYPE_INVALID
+    rmtAddr     - The address of the remote device. For integer types rmtAddr
+                     holds the value, for other types rmtAddr is a pointer to
+                     the data
+    lenRmtAddr  - Length in bytes of the data rmtAddr points to, ignored for
+                     integer types
     rmtPort     - The port number on the remote device
     length      - The length of the data to send
-    optSeqNum   - Sequence number of first byte
+    optSeqNum   - Sequence number of first byte. Once used, required on every
+                     subsequent ASCII or hex write
     pData       - The data to send
-    lenData     - Length of pData
+    lenData     - Length of pData in bytes
 
   Returns:
     true  - Success.
@@ -1160,9 +1283,9 @@ bool WINC_CmdSOCKWRTO(WINC_CMD_REQ_HANDLE handle, uint16_t sockId, WINC_TYPE typ
 
   Parameters:
     handle     - Command request session handle
-    sockId     - The socket ID
-    outputMode - The format the DTE wishes to receive the data
-    length     - The number of bytes the DTE wishes to read
+    sockId     - Socket ID, as returned by SOCKO
+    outputMode - Output format of the data
+    length     - Maximum number of bytes to read
 
   Returns:
     true  - Success.
@@ -1181,9 +1304,9 @@ bool WINC_CmdSOCKRD(WINC_CMD_REQ_HANDLE handle, uint16_t sockId, uint8_t outputM
 
   Parameters:
     handle     - Command request session handle
-    sockId     - The socket ID
-    outputMode - The format the DTE wishes to receive the data
-    length     - The number of bytes the DTE wishes to read
+    sockId     - Socket ID, as returned by SOCKO
+    outputMode - Output format of the data
+    length     - Maximum number of bytes to read
 
   Returns:
     true  - Success.
@@ -1202,7 +1325,7 @@ bool WINC_CmdSOCKRDBUF(WINC_CMD_REQ_HANDLE handle, uint16_t sockId, uint8_t outp
 
   Parameters:
     handle - Command request session handle
-    sockId - The socket ID
+    sockId - Socket ID, as returned by SOCKO
 
   Returns:
     true  - Success.
@@ -1217,12 +1340,12 @@ bool WINC_CmdSOCKCL(WINC_CMD_REQ_HANDLE handle, uint16_t sockId);
 
 /*****************************************************************************
   Description:
-    This function is used to present a list of the WINC's open
+    This function is used to present a list of the device's open
       sockets/connections.
 
   Parameters:
     handle    - Command request session handle
-    optSockId - The socket ID
+    optSockId - Socket ID, as returned by SOCKO
 
   Returns:
     true  - Success.
@@ -1245,11 +1368,16 @@ bool WINC_CmdSOCKLST(WINC_CMD_REQ_HANDLE handle, uint16_t optSockId);
 
   Parameters:
     handle     - Command request session handle
-    optSockId  - The socket ID
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optSockId  - Socket ID, as returned by SOCKO
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -1318,7 +1446,8 @@ bool WINC_CmdTIMEUTCSEC(WINC_CMD_REQ_HANDLE handle, uint8_t format, uint32_t utc
   Parameters:
     handle      - Command request session handle
     pDateTime   - Date/time in format YYYY-MM-DDTHH:MM:SS.00Z
-    lenDateTime - Length of pDateTime
+    lenDateTime - Length of pDateTime in bytes, strings are not NUL terminated
+                     so the length must not include a terminator
 
   Returns:
     true  - Success.
@@ -1338,10 +1467,15 @@ bool WINC_CmdTIMERFC(WINC_CMD_REQ_HANDLE handle, const uint8_t* pDateTime, size_
   Parameters:
     handle     - Command request session handle
     optConf    - Configuration number
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -1368,7 +1502,7 @@ bool WINC_CmdTLSC(WINC_CMD_REQ_HANDLE handle, uint8_t optConf, int32_t optId, WI
     handle    - Command request session handle
     conf      - Configuration number
     pDigest   - Hash digest
-    lenDigest - Length of pDigest
+    lenDigest - Length of pDigest in bytes
     optAlgo   - Hash algorithm
 
   Returns:
@@ -1393,10 +1527,15 @@ bool WINC_CmdTLSCDA(WINC_CMD_REQ_HANDLE handle, uint8_t conf, const uint8_t* pDi
   Parameters:
     handle     - Command request session handle
     optCslIdx  - Cipher suite list index
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -1417,15 +1556,20 @@ bool WINC_CmdTLSCSC(WINC_CMD_REQ_HANDLE handle, uint8_t optCslIdx, int32_t optId
 
 /*****************************************************************************
   Description:
-    This function is used to read or set the WINC's hotspot access point
+    This function is used to read or set the device's hotspot access point
       configuration.
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -1444,7 +1588,7 @@ bool WINC_CmdWAPC(WINC_CMD_REQ_HANDLE handle, int32_t optId, WINC_TYPE typeOptVa
 
 /*****************************************************************************
   Description:
-    This function is used to enable the WINC's hotspot access point
+    This function is used to enable the device's hotspot access point
       functionality.
 
   Parameters:
@@ -1473,10 +1617,15 @@ bool WINC_CmdWAP(WINC_CMD_REQ_HANDLE handle, int32_t optState);
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -1496,7 +1645,7 @@ bool WINC_CmdWSCNC(WINC_CMD_REQ_HANDLE handle, int32_t optId, WINC_TYPE typeOptV
 /*****************************************************************************
   Description:
     This function is used to scan for infrastructure networks in range of the
-      WINC.
+      device.
 
   Parameters:
     handle  - Command request session handle
@@ -1515,15 +1664,76 @@ bool WINC_CmdWSCN(WINC_CMD_REQ_HANDLE handle, uint8_t actPasv);
 
 /*****************************************************************************
   Description:
-    This function is used to read or set the WINC's Wi-Fi station mode
+    This function is used to modify or query the behavior of the periodic
+      passive scanning function.
+
+  Parameters:
+    handle     - Command request session handle
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
+
+  Returns:
+    true  - Success.
+    false - Failure.
+
+  Remarks:
+    This function has optional parameters, when an optional parameter is set
+    to its ignore value it and all subsequent parameters are ignored.
+    Subsequent parameters should also be set to their ignore values.
+
+    optId will be ignored if its value is WINC_CMDWSCNPC_ID_IGNORE_VAL.
+
+ *****************************************************************************/
+
+bool WINC_CmdWSCNPC(WINC_CMD_REQ_HANDLE handle, int32_t optId, WINC_TYPE typeOptVal, uintptr_t optVal, size_t lenOptVal);
+
+/*****************************************************************************
+  Description:
+    This function is used to start or stop the periodic passive scanning
+      function.
+
+  Parameters:
+    handle   - Command request session handle
+    optState - State of the periodic scan function
+
+  Returns:
+    true  - Success.
+    false - Failure.
+
+  Remarks:
+    This function has optional parameters, when an optional parameter is set
+    to its ignore value it and all subsequent parameters are ignored.
+    Subsequent parameters should also be set to their ignore values.
+
+    optState will be ignored if its value is WINC_CMDWSCNP_STATE_IGNORE_VAL.
+
+ *****************************************************************************/
+
+bool WINC_CmdWSCNP(WINC_CMD_REQ_HANDLE handle, int32_t optState);
+
+/*****************************************************************************
+  Description:
+    This function is used to read or set the device's Wi-Fi station mode
       configuration.
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -1542,7 +1752,7 @@ bool WINC_CmdWSTAC(WINC_CMD_REQ_HANDLE handle, int32_t optId, WINC_TYPE typeOptV
 
 /*****************************************************************************
   Description:
-    This function is used to control or query the WINC's station mode
+    This function is used to control or query the device's station mode
       functionality.
 
   Parameters:
@@ -1566,11 +1776,12 @@ bool WINC_CmdWSTA(WINC_CMD_REQ_HANDLE handle, int32_t optState);
 
 /*****************************************************************************
   Description:
-    This function is used to query current WiFi associations.
+    This function is used to query or disconnect WiFi associations.
 
   Parameters:
     handle     - Command request session handle
     optAssocId - Association ID
+    optState   - State to set
 
   Returns:
     true  - Success.
@@ -1583,9 +1794,11 @@ bool WINC_CmdWSTA(WINC_CMD_REQ_HANDLE handle, int32_t optState);
 
     optAssocId will be ignored if its value is WINC_CMDASSOC_ASSOC_ID_IGNORE_VAL.
 
+    optState will be ignored if its value is WINC_CMDASSOC_STATE_IGNORE_VAL.
+
  *****************************************************************************/
 
-bool WINC_CmdASSOC(WINC_CMD_REQ_HANDLE handle, uint16_t optAssocId);
+bool WINC_CmdASSOC(WINC_CMD_REQ_HANDLE handle, uint16_t optAssocId, int32_t optState);
 
 /*****************************************************************************
   Description:
@@ -1617,10 +1830,15 @@ bool WINC_CmdSI(WINC_CMD_REQ_HANDLE handle, uint8_t optFilter);
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -1666,7 +1884,9 @@ bool WINC_CmdWPROV(WINC_CMD_REQ_HANDLE handle, int32_t optState);
 
   Parameters:
     handle - Command request session handle
-    optId  - Parameter ID number
+    optId  - Parameter ID number. A fractional ID formed with
+                WINC_CmdFormFractInt selects a single value of a multiple value
+                parameter
 
   Returns:
     true  - Success.
@@ -1695,7 +1915,7 @@ bool WINC_CmdDI(WINC_CMD_REQ_HANDLE handle, int32_t optId);
     status          - Operation success or failure
     pOptSignature   - Signature (big endian). For ECDSA signatures: R then S,
                          each the size of the curve.
-    lenOptSignature - Length of pOptSignature
+    lenOptSignature - Length of pOptSignature in bytes
 
   Returns:
     true  - Success.
@@ -1718,10 +1938,15 @@ bool WINC_CmdEXTCRYPTO(WINC_CMD_REQ_HANDLE handle, uint16_t opId, uint8_t status
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -1744,10 +1969,15 @@ bool WINC_CmdWIFIC(WINC_CMD_REQ_HANDLE handle, int32_t optId, WINC_TYPE typeOptV
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -1796,7 +2026,7 @@ bool WINC_CmdNVMER(WINC_CMD_REQ_HANDLE handle, uint8_t sectorOffset, uint8_t sec
     offset  - Byte offset to be used for the NVM operation
     length  - The number of bytes for the NVM operation
     pData   - The data to write in hexadecimal string format
-    lenData - Length of pData
+    lenData - Length of pData in bytes
 
   Returns:
     true  - Success.
@@ -1895,10 +2125,15 @@ bool WINC_CmdDFUSEQ(WINC_CMD_REQ_HANDLE handle, uint8_t imageState);
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -1961,10 +2196,15 @@ bool WINC_CmdPPSPAUSE(WINC_CMD_REQ_HANDLE handle, uint16_t pauseTime);
 
   Parameters:
     handle     - Command request session handle
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -1983,8 +2223,8 @@ bool WINC_CmdSYSLOGC(WINC_CMD_REQ_HANDLE handle, int32_t optId, WINC_TYPE typeOp
 
 /*****************************************************************************
   Description:
-    This function is used to get or increase the WINC's ARB value, and to get
-      the current firmware's security level.
+    This function is used to get or increase the device's ARB value, and to
+      get the current firmware's security level.
 
   Parameters:
     handle   - Command request session handle
@@ -2012,10 +2252,15 @@ bool WINC_CmdARB(WINC_CMD_REQ_HANDLE handle, uint8_t optValue);
   Parameters:
     handle     - Command request session handle
     optConf    - Configuration number
-    optId      - Parameter ID number
-    typeOptVal - Type of optVal
-    optVal     - Parameter value
-    lenOptVal  - Length of optVal
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
 
   Returns:
     true  - Success.
@@ -2042,7 +2287,8 @@ bool WINC_CmdHTTPC(WINC_CMD_REQ_HANDLE handle, uint8_t optConf, int32_t optId, W
     handle     - Command request session handle
     conf       - Configuration number
     pOptPath   - Resource path
-    lenOptPath - Length of pOptPath
+    lenOptPath - Length of pOptPath in bytes, strings are not NUL terminated
+                    so the length must not include a terminator
 
   Returns:
     true  - Success.
@@ -2097,5 +2343,63 @@ bool WINC_CmdHTTPRD(WINC_CMD_REQ_HANDLE handle, uint8_t conf, int32_t length);
  *****************************************************************************/
 
 bool WINC_CmdHTTPCL(WINC_CMD_REQ_HANDLE handle, uint8_t conf);
+
+/*****************************************************************************
+  Description:
+    This function is used to modify or query the behavior of the beacon
+      function.
+
+  Parameters:
+    handle     - Command request session handle
+    optId      - Parameter ID number. A fractional ID formed with
+                    WINC_CmdFormFractInt selects a single value of a multiple
+                    value parameter
+    typeOptVal - Type of optVal, optVal is not sent if the type is
+                    WINC_TYPE_INVALID
+    optVal     - Parameter value. For integer types optVal holds the value,
+                    for other types optVal is a pointer to the data
+    lenOptVal  - Length in bytes of the data optVal points to, ignored for
+                    integer types
+
+  Returns:
+    true  - Success.
+    false - Failure.
+
+  Remarks:
+    This function has optional parameters, when an optional parameter is set
+    to its ignore value it and all subsequent parameters are ignored.
+    Subsequent parameters should also be set to their ignore values.
+
+    optId will be ignored if its value is WINC_CMDWBCNC_ID_IGNORE_VAL.
+
+ *****************************************************************************/
+
+bool WINC_CmdWBCNC(WINC_CMD_REQ_HANDLE handle, int32_t optId, WINC_TYPE typeOptVal, uintptr_t optVal, size_t lenOptVal);
+
+/*****************************************************************************
+  Description:
+    This function is used to start or stop periodic beacon transmission.
+      Exactly one of +WBCNDONE or +WBCNERR closes out every accepted start
+      request. A stop request only requests the stop: its OK does not mark the
+      end of the run, the +WBCNDONE which follows it does.
+
+  Parameters:
+    handle   - Command request session handle
+    optState - State of the beacon function
+
+  Returns:
+    true  - Success.
+    false - Failure.
+
+  Remarks:
+    This function has optional parameters, when an optional parameter is set
+    to its ignore value it and all subsequent parameters are ignored.
+    Subsequent parameters should also be set to their ignore values.
+
+    optState will be ignored if its value is WINC_CMDWBCN_STATE_IGNORE_VAL.
+
+ *****************************************************************************/
+
+bool WINC_CmdWBCN(WINC_CMD_REQ_HANDLE handle, int32_t optState);
 
 #endif // WINC_CMDS_H

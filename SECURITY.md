@@ -31,8 +31,12 @@ response before any public disclosure.
 
 There are currently no published security vulnerabilities known to affect the **WINCS02** or **RNWF02** devices or their latest firmware.
 
-Security enhancements and fixes have been applied to  **WINCS02** and **RNWF02** firmware in the following versions:
+Security enhancements and fixes have been applied to **WINCS02** and **RNWF02** firmware in the following versions:
 
+- **v3.3.0**
+  - Fixed vulnerabilities in the Wi-Fi firmware, including stricter validation of received management frames, scan results, EAPOL key messages and EAP-TLS fragments
+  - Fixed vulnerabilities in the network controller application, including stricter bounds checking when parsing DNS responses, PKCS/ASN.1 key data, HTTP responses, file system metadata and host commands
+  - **WINCS02 only:** The host driver validates the lengths of responses and events received from the device
 - **v3.1.0**
   - Fixed CVE-2009-3555 (TLS renegotiation)
   - Fixed CVE-2017-13079 and CVE-2017-13081 (Wi-Fi IGTK reinstallation)
@@ -47,7 +51,8 @@ The feature is based on the firmware version's Security Level:
 
 | Security Level | Firmware Versions |
 |---|---|
-| 1 | v3.2.0, v3.1.0 |
+| 4 | v3.3.0, v3.2.0 |
+| 1 | v3.1.0 |
 | 0 | v3.0.0, v2.0.0, v1.0.0 |
 
 For further details please refer to +ARB in the API Specification.

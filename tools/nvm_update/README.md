@@ -111,14 +111,14 @@ Checking device communication...
 ✓ Device responding COM5 at 230400 bps
 
 Getting firmware version...
-✓ Firmware version: 3.2.0 1 74d4fbc2 [15:48:01 Jan 21 2026]
+✓ Firmware version: 3.2.0 4 a1ac4a492 [11:48:01 Mar 19 2026]
 
 Erasing 240 sectors at offset 0...
 ✓ Sectors erased successfully
 
 Downloading firmware from rnwf02_ota.bin (chunk size: 128 bytes)...
-Chunk 1024/1024 (100%): 524288/524288 bytes
-✓ Downloaded 524288 bytes in 45.2s (11.3 KB/s)
+Chunk 4580/4580 (100%): 586240/586240 bytes
+✓ Downloaded 586240 bytes in 50.7s (11.3 KB/s)
 
 Verifying firmware...
 ✓ Firmware verified successfully
@@ -130,7 +130,7 @@ Resetting device...
 ✓ Device reset command sent
 
 Getting firmware version...
-✓ Firmware version: 3.2.1 1 8a5c3fd9 [10:23:45 Jan 28 2026]
+✓ Firmware version: 3.3.0 4 a59011f4b [10:46:17 Oct 23 2026]
 
 ✓ Firmware update completed
 ```
